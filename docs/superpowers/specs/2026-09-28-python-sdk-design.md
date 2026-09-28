@@ -28,6 +28,7 @@ All paths are relative to `/Users/nikolay/Projects/ProofAge/` unless absolute. T
 | D7 | **0.2.0** ships `proofage.agents`: one framework-neutral set of tool definitions with thin exporters for the OpenAI and Anthropic tool formats. No per-framework wrappers for LangChain or CrewAI; they take the neutral definitions (documented) or connect to the ProofAge MCP server directly. |
 | D8 | The ready-to-deploy Telegram bot is a **separate repository** built on this SDK, not part of the package. |
 | D9 | Publishing uses **PyPI Trusted Publishing** from GitHub Actions on `v*` tags, under a PyPI organisation `ProofAge`. No API tokens anywhere. |
+| D10 | Every request **identifies the SDK and its version** with `X-ProofAge-Sdk: python/{version}` and a `ProofAge-Python/{version} (Python {x.y.z})` User-Agent, the contract every ProofAge client follows since 2026-09-28 (php-sdk 0.3.0, laravel-client 0.9.0, @proofage/node 0.7.0, the WordPress plugin, the Shopify app, browser SDK 1.3). It is how support tells SDK traffic from a hand-written client and which version a customer runs (§3.3). |
 
 ### 1.2 Defaults this spec assumes (owner to confirm or override)
 
@@ -131,7 +132,14 @@ Configuration, resolved argument → environment variable → default, with the 
 
 Missing keys raise `ConfigurationError` naming the environment variable to set. Both clients are context managers and have `close()` / `aclose()`.
 
-Every request carries `User-Agent: proofage-python/{version} python/{major.minor}`.
+Every request identifies the SDK (§3.3).
+
+Two more arguments, for a package that wraps this SDK (a framework plugin, the Telegram bot template of D8); neither has an environment variable:
+
+| Argument | Default | Notes |
+|---|---|---|
+| `sdk_tokens` | `()` | `name/version` tokens prepended to the SDK's own in `X-ProofAge-Sdk`, outermost first (§3.3) |
+| `user_agent` | SDK default | Replaces the default User-Agent; `X-ProofAge-Sdk` is still sent |
 
 ### 3.2 Resources
 
@@ -153,6 +161,18 @@ Method names are Python's (`snake_case`), arguments are keyword-only and typed, 
 | `verifications.block_face(verification_id, *, reason_code=None, reason=None)` | `POST /verifications/{id}/blocked-face` | `None` |
 
 `upload_media(file=...)` accepts `bytes`, a binary file object or a `pathlib.Path`. The full request and response field lists are those of `proofage-node-client/AGENTS.md` and are reproduced in this package's `AGENTS.md`; the contract test (§8) keeps them honest.
+
+### 3.3 SDK identification
+
+The same contract as every other ProofAge client, so the API and the people reading its logs see one format:
+
+- **`X-ProofAge-Sdk`** on every request: space-separated `name/version` tokens, outermost wrapper first, the SDK's own `python/{__version__}` always last. A wrapper passing `sdk_tokens=["telegram-bot/1.2.0"]` sends `telegram-bot/1.2.0 python/0.1.0`. Names are lowercase.
+- **`User-Agent`**: `ProofAge-Python/{__version__} (Python {platform.python_version()})`, e.g. `ProofAge-Python/0.1.0 (Python 3.12.7)`. It replaces httpx's default `python-httpx/x`. It is kept as the caller set it when they pass `user_agent`, or when a caller-supplied `http_client` already carries a `User-Agent` other than httpx's default.
+- **The SDK's own token cannot be removed.** A wrapper token named `python` (any case) is dropped, so it can neither replace nor repeat the SDK's own. The header is set per request on every attempt, after any caller hook, so an `http_client` default header or event hook cannot remove it.
+- **Validated at construction.** A token must match `^[\x21-\x2E\x30-\x7E]+/[\x21-\x2E\x30-\x7E]+$` (printable ASCII, no space, exactly one slash) and `user_agent` must be printable ASCII (`\x20`–`\x7E`). Anything else raises `ConfigurationError` when the client is built, not on every request after its retries (the lesson the Node SDK learned before 0.7.0).
+- **Not part of the HMAC signature.** Signing stays `METHOD + path + body` (§5.1); the golden vectors do not change.
+- **One version source.** Both headers read `proofage._version.__version__`, the file hatchling already reads (§10), so a release cannot report a stale number.
+- **How the API uses it.** Today the app reads `X-ProofAge-Sdk` only to classify an unsigned create (`web/…` is the browser widget), and SDK requests are always signed, so the header changes nothing about how a request is handled. It is not redacted, so it is visible in the app's API logs; storing it per verification for the landlord console and MCP is planned separately in `proofageapp`.
 
 ---
 
@@ -315,7 +335,7 @@ The maintainer runbook for regenerating the spec stays in one place, `proofageap
 Written in this order, each layer green before the next starts:
 
 1. **Golden vectors** (`tests/test_signing.py`): every entry in the `json`, `multipart` and `webhook` sections of the fixture produces the expected signature. Nothing else is written until these pass.
-2. **Transport** with respx: retry matrix of §5.2 (including "POST not retried on 5xx", "POST retried on pre-send connection error", `Retry-After` honoured), the four error shapes of §6, the non-JSON-2xx message, and a check that the bytes sent equal the bytes signed.
+2. **Transport** with respx: retry matrix of §5.2 (including "POST not retried on 5xx", "POST retried on pre-send connection error", `Retry-After` honoured), the four error shapes of §6, the non-JSON-2xx message, and a check that the bytes sent equal the bytes signed. SDK identification (§3.3): `X-ProofAge-Sdk` and `User-Agent` on a JSON request, a body-less request, a multipart upload, a media download and every retry attempt, for both clients; `sdk_tokens` prepended in order; a `python` wrapper token dropped; a caller `http_client` with its own User-Agent kept and one with httpx's default replaced; invalid tokens and a non-ASCII or line-breaking `user_agent` raising `ConfigurationError` at construction; the signature identical with and without the headers.
 3. **Resources**: each method against a mocked response taken from `AGENTS.md`. One test module, parametrised over the sync and async client, so the two can never drift apart.
 4. **Models**: an unknown field survives; an unknown status parses as `str`; `model_dump(mode="json")` round-trips.
 5. **Webhooks**: every error code of `WebhookVerificationError`, tolerance boundary, canonical-JSON fallback; each extra through its framework's own test client (FastAPI `TestClient`, Django `RequestFactory`, Flask `test_client`).
