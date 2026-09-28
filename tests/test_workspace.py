@@ -30,7 +30,7 @@ def test_get_workspace(sdk: Harness, api: respx.MockRouter) -> None:
 
 def test_get_consent(sdk: Harness, api: respx.MockRouter) -> None:
     api.get("/consent").respond(
-        200, json={"id": 3, "version": "2026-01", "text_sha256": "ab" * 32, "url": "https://x"}
+        200, json={"id": 3, "version": 2, "text_sha256": "ab" * 32, "url": "https://x"}
     )
     consent = sdk.call(lambda c: c.workspace.consent())
     assert isinstance(consent, ConsentInfo)

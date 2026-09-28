@@ -13,8 +13,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class ProofAgeModel(BaseModel):
     """Base of every response model; extra fields land in `model_extra`.
 
-    A number sent where a string is documented is read as its string: the live API
-    sends the consent version as an integer although its spec says string.
+    A number sent where a string is documented is read as its string, so type drift
+    between the API and its spec cannot break parsing (the consent version was
+    documented as a string while the API sent an integer, until 2026-09-28).
     """
 
     model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True)
@@ -75,7 +76,8 @@ class WorkspaceInfo(ProofAgeModel):
 
 class ConsentInfo(ProofAgeModel):
     id: int
-    version: str
+    version: int
+    """The consent version number; informational (accept with `id` and `text_sha256`)."""
     text_sha256: str
     url: str
 

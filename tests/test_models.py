@@ -10,7 +10,22 @@ from proofage.models import (
     VerificationDocument,
     VerificationStatus,
     WebhookEvent,
+    WorkspaceInfo,
 )
+
+WORKSPACE_FIELDS: dict[str, Any] = {
+    "id": "ws-1",
+    "name": "Shop",
+    "flow_type": "age",
+    "mode": "live",
+    "age_mode": "estimation",
+    "age_threshold": 18,
+    "verification_type": "age",
+    "redirect_url": None,
+    "webhook_url": None,
+    "allow_expired_documents": False,
+    "allow_duplicate_accounts": True,
+}
 
 VERIFICATION: dict[str, Any] = {
     "id": "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b",
@@ -121,11 +136,18 @@ def test_webhook_event_optional_blocks() -> None:
 
 
 def test_a_number_where_a_string_is_documented_does_not_break_parsing() -> None:
-    # The live API sends the consent version as an integer although the spec says string.
+    # Guards against type drift between the API and its spec, as happened with the
+    # consent version before 2026-09-28.
+    workspace = WorkspaceInfo.model_validate({**WORKSPACE_FIELDS, "name": 1234})
+    assert workspace.name == "1234"
+
+
+def test_the_consent_version_is_the_integer_the_api_sends() -> None:
     consent = ConsentInfo.model_validate(
         {"id": 3, "version": 2, "text_sha256": "ab" * 32, "url": "https://x"}
     )
-    assert consent.version == "2"
+    assert consent.version == 2
+    assert isinstance(consent.version, int)
 
 
 def test_enum_members_print_as_their_api_values() -> None:
