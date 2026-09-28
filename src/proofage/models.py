@@ -81,9 +81,9 @@ class ConsentInfo(ProofAgeModel):
 
 
 class DuplicateMatch(ProofAgeModel):
-    verification_id: str
+    verification_id: str | None
     external_id: str | None
-    similarity_score: float
+    similarity_score: float | None
     verified_at: datetime | None
 
 

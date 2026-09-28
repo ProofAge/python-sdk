@@ -19,11 +19,11 @@ class Workspace:
 
     def get(self) -> WorkspaceInfo:
         """`GET /workspace`."""
-        return WorkspaceInfo.model_validate(self._client._get("workspace"))
+        return self._client._get_model("workspace", WorkspaceInfo)
 
     def consent(self) -> ConsentInfo:
         """`GET /consent`: the consent text version a person must accept."""
-        return ConsentInfo.model_validate(self._client._get("consent"))
+        return self._client._get_model("consent", ConsentInfo)
 
 
 class AsyncWorkspace:
@@ -34,8 +34,8 @@ class AsyncWorkspace:
 
     async def get(self) -> WorkspaceInfo:
         """`GET /workspace`."""
-        return WorkspaceInfo.model_validate(await self._client._get("workspace"))
+        return await self._client._get_model("workspace", WorkspaceInfo)
 
     async def consent(self) -> ConsentInfo:
         """`GET /consent`: the consent text version a person must accept."""
-        return ConsentInfo.model_validate(await self._client._get("consent"))
+        return await self._client._get_model("consent", ConsentInfo)

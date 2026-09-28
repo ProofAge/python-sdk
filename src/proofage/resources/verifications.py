@@ -62,11 +62,11 @@ class Verifications:
                 "page_url": page_url,
             }
         )
-        return CreatedVerification.model_validate(self._client._post("verifications", payload))
+        return self._client._post_model("verifications", payload, CreatedVerification)
 
     def get(self, verification_id: str) -> Verification:
         """`GET /verifications/{id}`."""
-        return Verification.model_validate(self._client._get(verification_path(verification_id)))
+        return self._client._get_model(verification_path(verification_id), Verification)
 
     def accept_consent(
         self,
@@ -94,8 +94,9 @@ class Verifications:
                 "referrer": referrer,
             }
         )
-        data = self._client._post(verification_path(verification_id, "/consent"), payload)
-        return AcceptConsentResult.model_validate(data)
+        return self._client._post_model(
+            verification_path(verification_id, "/consent"), payload, AcceptConsentResult
+        )
 
     def submit(self, verification_id: str) -> None:
         """`POST /verifications/{id}/submit`. Custom capture flows only."""
@@ -103,13 +104,15 @@ class Verifications:
 
     def document(self, verification_id: str) -> VerificationDocument:
         """`GET /verifications/{id}/document`: extracted fields and media ids."""
-        data = self._client._get(verification_path(verification_id, "/document"))
-        return VerificationDocument.model_validate(data)
+        return self._client._get_model(
+            verification_path(verification_id, "/document"), VerificationDocument
+        )
 
     def estimation(self, verification_id: str) -> AgeEstimation:
         """`GET /verifications/{id}/estimation`."""
-        data = self._client._get(verification_path(verification_id, "/estimation"))
-        return AgeEstimation.model_validate(data)
+        return self._client._get_model(
+            verification_path(verification_id, "/estimation"), AgeEstimation
+        )
 
     def block_face(
         self,
@@ -217,13 +220,11 @@ class AsyncVerifications:
                 "page_url": page_url,
             }
         )
-        data = await self._client._post("verifications", payload)
-        return CreatedVerification.model_validate(data)
+        return await self._client._post_model("verifications", payload, CreatedVerification)
 
     async def get(self, verification_id: str) -> Verification:
         """`GET /verifications/{id}`."""
-        data = await self._client._get(verification_path(verification_id))
-        return Verification.model_validate(data)
+        return await self._client._get_model(verification_path(verification_id), Verification)
 
     async def accept_consent(
         self,
@@ -251,8 +252,9 @@ class AsyncVerifications:
                 "referrer": referrer,
             }
         )
-        data = await self._client._post(verification_path(verification_id, "/consent"), payload)
-        return AcceptConsentResult.model_validate(data)
+        return await self._client._post_model(
+            verification_path(verification_id, "/consent"), payload, AcceptConsentResult
+        )
 
     async def submit(self, verification_id: str) -> None:
         """`POST /verifications/{id}/submit`. Custom capture flows only."""
@@ -260,13 +262,15 @@ class AsyncVerifications:
 
     async def document(self, verification_id: str) -> VerificationDocument:
         """`GET /verifications/{id}/document`: extracted fields and media ids."""
-        data = await self._client._get(verification_path(verification_id, "/document"))
-        return VerificationDocument.model_validate(data)
+        return await self._client._get_model(
+            verification_path(verification_id, "/document"), VerificationDocument
+        )
 
     async def estimation(self, verification_id: str) -> AgeEstimation:
         """`GET /verifications/{id}/estimation`."""
-        data = await self._client._get(verification_path(verification_id, "/estimation"))
-        return AgeEstimation.model_validate(data)
+        return await self._client._get_model(
+            verification_path(verification_id, "/estimation"), AgeEstimation
+        )
 
     async def block_face(
         self,

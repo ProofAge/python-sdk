@@ -13,9 +13,11 @@ import mimetypes
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timezone
-from typing import Any
+from typing import Any, TypeVar
 
 import httpx
+from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 
 from ._config import SDK_HEADER, ClientConfig
 from ._signing import (
@@ -254,3 +256,35 @@ def retry_delay(
     if status == 429 and retry_after is not None:
         return retry_after
     return config.retry_delay * (attempt + 1)
+
+
+MAX_RETRY_AFTER = 60.0
+"""A 429 asking for a longer wait is raised at once rather than slept on in-process."""
+
+M = TypeVar("M", bound=BaseModel)
+
+
+def within_retry_after_cap(status: int, retry_after: float | None) -> bool:
+    """False when a 429's `Retry-After` is longer than the SDK will block a caller for."""
+    return not (status == 429 and retry_after is not None and retry_after > MAX_RETRY_AFTER)
+
+
+def describe_validation_error(exc: PydanticValidationError) -> str:
+    """Which fields did not match, never the values: a response or webhook body carries PII."""
+    problems = [
+        f"{'.'.join(str(part) for part in error['loc']) or '<body>'}: {error['msg']}"
+        for error in exc.errors(include_url=False, include_input=False)
+    ]
+    shown = "; ".join(problems[:5])
+    return shown if len(problems) <= 5 else f"{shown}; and {len(problems) - 5} more"
+
+
+def parse_model(model: type[M], data: Any, where: str) -> M:
+    """Validate a decoded response, turning a shape mismatch into a `ProofAgeError`."""
+    try:
+        return model.model_validate(data)
+    except PydanticValidationError as exc:
+        raise ProofAgeError(
+            f"Unexpected response shape from {where}: {describe_validation_error(exc)}. "
+            "The API may be newer than this SDK; upgrade proofage or report it",
+        ) from exc

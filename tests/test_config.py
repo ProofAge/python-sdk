@@ -165,3 +165,15 @@ def test_repr_never_shows_the_secret() -> None:
     assert SECRET_KEY not in text
     assert API_KEY not in text
     assert "secret_key='***'" in text
+
+
+def test_construction_errors_never_carry_the_secret() -> None:
+    for overrides in (
+        {"base_url": "not-a-url"},
+        {"timeout": 0},
+        {"sdk_tokens": ["bad"]},
+        {"user_agent": "x\n"},
+    ):
+        with pytest.raises(ConfigurationError) as raised:
+            config(**overrides)
+        assert SECRET_KEY not in str(raised.value)

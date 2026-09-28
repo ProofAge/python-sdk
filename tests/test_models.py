@@ -134,3 +134,19 @@ def test_enum_members_print_as_their_api_values() -> None:
     assert str(VerificationStatus.APPROVED) == "approved"
     assert f"{VerificationStatus.DECLINED}" == "declined"
     assert str(BlockFaceReasonCode.UNDERAGE) == "underage"
+
+
+def test_a_duplicate_match_may_carry_nulls() -> None:
+    match = {
+        "verification_id": None,
+        "external_id": None,
+        "similarity_score": None,
+        "verified_at": None,
+    }
+    model = CreatedVerification.model_validate(
+        {
+            **VERIFICATION,
+            "duplicate_check": {"checked": True, "duplicate_count": 1, "duplicates": [match]},
+        }
+    )
+    assert model.duplicate_check.duplicates[0].similarity_score is None

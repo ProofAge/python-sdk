@@ -130,7 +130,8 @@ except ProofAgeError as error:
 `AuthenticationError` (401), `PaymentRequiredError` (402), `PermissionDeniedError` (403),
 `NotFoundError` (404), `ValidationError` (422), `RateLimitError` (429), `ServerError` (5xx) and
 `TransportError` (no response) all extend `ProofAgeError`. `ConfigurationError` is raised when a
-client is built with missing or invalid settings.
+client is built with missing or invalid settings. A response whose shape this SDK version does not
+recognise raises `ProofAgeError` naming the fields (never their values).
 
 ## Configuration
 
@@ -159,7 +160,9 @@ TLS; the SDK never closes a client you pass in.
 - A GET is retried on 408, 429, 5xx, timeouts and connection failures.
 - A POST is retried only on 429 and when the connection never opened. It is never retried on a
   5xx or once sending began, because the server may already have created the verification.
-- A 429 waits for its `Retry-After`; otherwise the wait grows by `retry_delay` per attempt.
+- A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`
+  at once (with `retry_after` set) instead of blocking your thread. Otherwise the wait grows by
+  `retry_delay` per attempt.
 - Media downloads never retry an HTTP status; run them from a queue and let its backoff wait.
 
 ## Media

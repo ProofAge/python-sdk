@@ -173,3 +173,12 @@ def test_a_signed_body_that_is_not_an_event() -> None:
         verify(body, headers(body))
     assert raised.value.code == "INVALID_PAYLOAD"
     assert raised.value.http_status == 400
+
+
+def test_an_invalid_payload_error_does_not_echo_the_body() -> None:
+    body = b'{"hello":"a.person@example.com"}'
+    with pytest.raises(WebhookVerificationError) as raised:
+        verify(body, headers(body))
+    assert raised.value.code == "INVALID_PAYLOAD"
+    assert "a.person@example.com" not in raised.value.message
+    assert "verification_id" in raised.value.message

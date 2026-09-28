@@ -35,3 +35,19 @@ def test_get_consent(sdk: Harness, api: respx.MockRouter) -> None:
     consent = sdk.call(lambda c: c.workspace.consent())
     assert isinstance(consent, ConsentInfo)
     assert consent.id == 3
+
+
+def test_an_unexpected_response_shape_is_a_proofage_error(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    import pytest
+
+    from proofage.errors import ProofAgeError
+
+    api.get("/workspace").respond(200, json={"id": "ws-1", "name": "a.person@example.com"})
+    with pytest.raises(
+        ProofAgeError, match="Unexpected response shape from GET /v1/workspace"
+    ) as e:
+        sdk.call(lambda c: c.workspace.get())
+    assert "a.person@example.com" not in e.value.message
+    assert "flow_type" in e.value.message

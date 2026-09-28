@@ -219,7 +219,7 @@ Both clients share one transport module; only the I/O calls differ. The behaviou
 | `POST` | 429; errors raised **before** the request was sent: `httpx.ConnectError` (DNS failure, connection refused, TLS handshake) and `httpx.ConnectTimeout` | 5xx and every error after sending began: `httpx.WriteError`, `WriteTimeout`, `ReadError`, `ReadTimeout`, `RemoteProtocolError`. The server may already have created the verification or stored the upload |
 | Media download | Transport failures only, up to `download_retry_attempts` | Any HTTP status, 429 included: downloads usually run from a queue whose own backoff owns the wait |
 
-A 429 waits for `Retry-After` when present (seconds or an HTTP date, as the Node SDK parses both), otherwise `retry_delay × attempt`. The rule set is the Node SDK's (`AGENTS.md` "Retries") and the PHP SDK's (spec §4.5), so a request behaves the same in every language.
+A 429 waits for `Retry-After` when present (seconds or an HTTP date, as the Node SDK parses both) up to 60 seconds; a longer one raises `RateLimitError` at once rather than blocking the caller's thread (implementation ruling after the final review). Otherwise `retry_delay × attempt`. The rule set is the Node SDK's (`AGENTS.md` "Retries") and the PHP SDK's (spec §4.5), so a request behaves the same in every language.
 
 ---
 
@@ -237,7 +237,8 @@ ProofAgeError                      status_code, message, code, error_data, respo
 └── TransportError                 no response: DNS, connection, TLS, timeout (.__cause__ is the httpx exception)
 ConfigurationError                 missing or invalid configuration, raised at construction
 WebhookVerificationError           .code in MISSING_SIGNATURE, MISSING_TIMESTAMP, MISSING_AUTH_CLIENT,
-                                   INVALID_AUTH_CLIENT, TIMESTAMP_TOO_OLD, INVALID_SIGNATURE, CONFIGURATION_ERROR
+                                   INVALID_AUTH_CLIENT, TIMESTAMP_TOO_OLD, INVALID_SIGNATURE (401),
+                                   CONFIGURATION_ERROR (500), INVALID_PAYLOAD (400: signed, not an event)
 ```
 
 Python callers branch on exception type far more than on status codes, so this hierarchy is finer than Node's (which has only `AuthenticationError` and `ValidationError`). Every class still exposes `status_code` and `code`, so a Node-style `if e.code == ...` works too.
@@ -249,7 +250,7 @@ The error body is parsed in all four shapes the API sends (`proofageapp` develop
 3. `{"message", "errors"}` (request validation 422): `code` is `None`, `errors` has the fields.
 4. `{"message"}` (403, 404).
 
-A 2xx with an empty body returns `None` from the methods typed `-> None` (`upload_media`, `submit`, `block_face`); for a method that promises a model, an empty body raises `ProofAgeError` rather than returning `None` against its type. A non-empty 2xx that is not JSON raises `ProofAgeError` whose message says that `base_url` most likely points at a website rather than the API; this is the most common first-run mistake.
+A 2xx whose body does not match its model raises `ProofAgeError` ("Unexpected response shape from GET /v1/…") naming the fields but never their values, so a Pydantic `ValidationError` never escapes the SDK. A 2xx with an empty body returns `None` from the methods typed `-> None` (`upload_media`, `submit`, `block_face`); for a method that promises a model, an empty body raises `ProofAgeError` rather than returning `None` against its type. A non-empty 2xx that is not JSON raises `ProofAgeError` whose message says that `base_url` most likely points at a website rather than the API; this is the most common first-run mistake.
 
 ---
 
@@ -261,6 +262,7 @@ A 2xx with an empty body returns `None` from the methods typed `-> None` (`uploa
 from proofage import verify_webhook
 
 event = verify_webhook(raw_body, headers)          # -> WebhookEvent, or raises WebhookVerificationError
+verify_webhook_signature(raw_body, headers)        # the checks only, -> None
 ```
 
 - Signature: `verify_webhook(raw_body, headers, *, api_key=None, secret_key=None, tolerance=None)`. Each keyword falls back to `PROOFAGE_API_KEY`, `PROOFAGE_SECRET_KEY` and `PROOFAGE_WEBHOOK_TOLERANCE`. `raw_body` is `bytes` exactly as received; `headers` is any case-insensitive mapping.

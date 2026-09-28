@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pydantic import ValidationError as PydanticValidationError
 
 from ._signing import webhook_signature
+from ._transport import describe_validation_error
 from .errors import WebhookVerificationError
 from .models import WebhookEvent
 
@@ -117,7 +118,9 @@ def verify_webhook(
         event = WebhookEvent.model_validate_json(raw_body)
     except PydanticValidationError as exc:
         raise _fail(
-            "INVALID_PAYLOAD", f"Signed body is not a ProofAge webhook: {exc}", 400
+            "INVALID_PAYLOAD",
+            f"Signed body is not a ProofAge webhook event: {describe_validation_error(exc)}",
+            400,
         ) from exc
     lowered = {key.lower(): value for key, value in headers.items()}
     delivery_id = lowered.get("x-proofage-webhook-delivery-id")

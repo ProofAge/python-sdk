@@ -234,3 +234,22 @@ def test_json_payload_order_is_preserved_in_the_signature(api: respx.MockRouter)
         client._post("verifications", {"b": 1, "a": 2})
     assert json.loads(route.calls.last.request.content) == {"b": 1, "a": 2}
     assert route.calls.last.request.content == b'{"b":1,"a":2}'
+
+
+def test_a_retry_after_beyond_the_cap_is_not_waited_for(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.get("/workspace").respond(429, headers={"Retry-After": "3600"})
+    with pytest.raises(RateLimitError) as raised:
+        sdk.call(lambda c: c._get("workspace"))
+    assert route.call_count == 1
+    assert sdk.sleeps == []
+    assert raised.value.retry_after == 3600.0
+
+
+def test_the_secret_never_leaves_the_client(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post("/verifications").respond(201, json={"id": "v"})
+    sdk.call(lambda c: c._post("verifications", {"external_id": "a"}))
+    request = route.calls.last.request
+    assert SECRET_KEY.encode() not in request.content
+    assert all(SECRET_KEY not in value for value in request.headers.values())

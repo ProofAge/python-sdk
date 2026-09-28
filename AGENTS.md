@@ -66,8 +66,10 @@ Retries: GETs retry on 408, 429, 5xx, timeouts and transport errors. POSTs retry
 and on errors raised before anything was sent (`httpx.ConnectError`, `httpx.ConnectTimeout`) —
 never on 5xx or after sending began (`WriteError`, `WriteTimeout`, `ReadError`, `ReadTimeout`,
 `RemoteProtocolError`), where the server may already have created the verification or stored the
-upload. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, else
-`retry_delay * attempt`.
+upload. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, up to 60 seconds —
+a longer one raises `RateLimitError` at once with `retry_after` set — else `retry_delay * attempt`.
+A 2xx whose body does not match the model raises `ProofAgeError` ("Unexpected response shape from
+GET /v1/..."), naming the fields but never their values.
 
 ## Auth / HMAC
 
@@ -161,7 +163,7 @@ except WebhookVerificationError as error:
 
 - `verify_webhook(raw_body, headers, *, api_key=None, secret_key=None, tolerance=None)` → `WebhookEvent`; `verify_webhook_signature(...)` → `None` (checks only). Keys and tolerance fall back to `PROOFAGE_API_KEY`, `PROOFAGE_SECRET_KEY`, `PROOFAGE_WEBHOOK_TOLERANCE` (default 300 seconds, in both directions).
 - Pass the body **exactly as received** (`bytes` or `str`). A body whose only change is whitespace is still accepted (the canonical compact JSON is tried once), but one that lost PHP's `\/` escapes is not.
-- Error codes, in check order: `MISSING_SIGNATURE`, `MISSING_TIMESTAMP`, `MISSING_AUTH_CLIENT` (401); `CONFIGURATION_ERROR` (500, keys missing — checked after the three headers); `INVALID_AUTH_CLIENT`, `MISSING_TIMESTAMP` for a non-integer timestamp, `TIMESTAMP_TOO_OLD`, `INVALID_SIGNATURE` (401); `INVALID_PAYLOAD` (400, correctly signed but not a webhook event).
+- Error codes, in check order: `MISSING_SIGNATURE`, `MISSING_TIMESTAMP`, `MISSING_AUTH_CLIENT` (401); `CONFIGURATION_ERROR` (500, keys missing — checked after the three headers); `INVALID_AUTH_CLIENT`, `MISSING_TIMESTAMP` for a non-integer timestamp, `TIMESTAMP_TOO_OLD`, `INVALID_SIGNATURE` (401); `INVALID_PAYLOAD` (400, correctly signed but not a webhook event; the message names the fields, never the body's values).
 - `WebhookEvent`:
 
 ```

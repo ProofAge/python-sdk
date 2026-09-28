@@ -14,15 +14,19 @@ import httpx
 from ._config import resolve_config
 from ._transport import (
     DOWNLOAD_ACCEPT,
+    M,
     PreparedRequest,
+    api_path,
     decode_success,
     error_for_response,
     is_retryable_exception,
     is_retryable_status,
+    parse_model,
     parse_retry_after,
     prepare_json,
     prepare_multipart,
     retry_delay,
+    within_retry_after_cap,
 )
 from .errors import TransportError
 from .resources.verifications import AsyncVerifications
@@ -92,6 +96,14 @@ class AsyncProofAge:
         prepared = prepare_json(self._config, "POST", endpoint, payload)
         return await self._send(prepared, expect_body=True)
 
+    async def _get_model(self, endpoint: str, model: type[M]) -> M:
+        data = await self._get(endpoint)
+        return parse_model(model, data, f"GET {api_path(self._config, endpoint)}")
+
+    async def _post_model(self, endpoint: str, payload: Mapping[str, Any], model: type[M]) -> M:
+        data = await self._post(endpoint, payload)
+        return parse_model(model, data, f"POST {api_path(self._config, endpoint)}")
+
     async def _post_empty(self, endpoint: str, payload: Mapping[str, Any] | None = None) -> None:
         prepared = prepare_json(self._config, "POST", endpoint, payload)
         await self._send(prepared, expect_body=False)
@@ -133,7 +145,11 @@ class AsyncProofAge:
                     expect_body=expect_body,
                 )
             retry_after = parse_retry_after(response.headers.get("retry-after"), time.time())
-            if not last and is_retryable_status(prepared.method, response.status_code):
+            if (
+                not last
+                and is_retryable_status(prepared.method, response.status_code)
+                and within_retry_after_cap(response.status_code, retry_after)
+            ):
                 await self._sleep(
                     retry_delay(self._config, attempt, response.status_code, retry_after)
                 )
