@@ -9,6 +9,7 @@ import respx
 from proofage import AsyncProofAge, ProofAge
 from proofage._signing import canonical_multipart_request, canonical_request, sign
 from proofage._transport import parse_retry_after
+from proofage._version import __version__
 from proofage.errors import (
     AuthenticationError,
     RateLimitError,
@@ -84,8 +85,8 @@ def test_every_request_identifies_the_sdk(sdk: Harness, api: respx.MockRouter) -
     route = api.get("/workspace").respond(200, json=WORKSPACE)
     sdk.call(lambda c: c._get("workspace"), sdk_tokens=["telegram-bot/1.2.0"])
     request = route.calls.last.request
-    assert request.headers["X-ProofAge-Sdk"] == "telegram-bot/1.2.0 python/0.1.0"
-    assert request.headers["User-Agent"].startswith("ProofAge-Python/0.1.0 (Python ")
+    assert request.headers["X-ProofAge-Sdk"] == f"telegram-bot/1.2.0 python/{__version__}"
+    assert request.headers["User-Agent"].startswith(f"ProofAge-Python/{__version__} (Python ")
 
 
 def test_identification_is_sent_on_every_retry(sdk: Harness, api: respx.MockRouter) -> None:
@@ -95,7 +96,7 @@ def test_identification_is_sent_on_every_retry(sdk: Harness, api: respx.MockRout
     sdk.call(lambda c: c._get("workspace"), retry_delay=0)
     assert route.call_count == 2
     for call in route.calls:
-        assert call.request.headers["X-ProofAge-Sdk"] == "python/0.1.0"
+        assert call.request.headers["X-ProofAge-Sdk"] == f"python/{__version__}"
 
 
 def test_get_retries_5xx_408_and_429(sdk: Harness, api: respx.MockRouter) -> None:

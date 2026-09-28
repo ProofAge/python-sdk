@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased (0.2.0)
+## 0.2.0 — 2026-09-28
 
 - **Changed:** `ConsentInfo.version` is an `int`, the type the API has always sent. 0.1.0
   typed it `str` after the API's own documentation, and turned the number into a string.

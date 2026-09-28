@@ -11,6 +11,7 @@ from proofage._config import (
     normalize_base_url,
     resolve_config,
 )
+from proofage._version import __version__
 from proofage.errors import ConfigurationError
 
 from .conftest import API_KEY, SECRET_KEY
@@ -124,14 +125,14 @@ def test_unusable_base_urls_are_refused(raw: str) -> None:
 
 
 def test_sdk_header_puts_wrappers_first_and_the_sdk_last() -> None:
-    assert build_sdk_header() == "python/0.1.0"
+    assert build_sdk_header() == f"python/{__version__}"
     assert build_sdk_header(["telegram-bot/1.2.0", "shop/2"]) == (
-        "telegram-bot/1.2.0 shop/2 python/0.1.0"
+        f"telegram-bot/1.2.0 shop/2 python/{__version__}"
     )
 
 
 def test_a_wrapper_cannot_impersonate_the_sdk() -> None:
-    assert build_sdk_header(["Python/9.9.9"]) == "python/0.1.0"
+    assert build_sdk_header(["Python/9.9.9"]) == f"python/{__version__}"
 
 
 @pytest.mark.parametrize("token", ["no-slash", "a/b/c", "has space/1", "ünï/1", "", "/1", "a/"])
@@ -141,7 +142,10 @@ def test_invalid_tokens_fail_at_construction(token: str) -> None:
 
 
 def test_default_user_agent() -> None:
-    assert default_user_agent() == f"ProofAge-Python/0.1.0 (Python {platform.python_version()})"
+    assert (
+        default_user_agent()
+        == f"ProofAge-Python/{__version__} (Python {platform.python_version()})"
+    )
     assert config().user_agent == default_user_agent()
 
 
