@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Supported until: 3.10 2027-10, 3.11 2028-10, 3.12 2029-10, 3.13 2030-10, 3.14 2031-10
+        # (12 months after upstream end of life; see README "Supported versions").
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run pytest
+
+  lowest:
+    name: Lowest dependency versions (Python 3.10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.10"
+      # --no-sync: a plain `uv run` would re-resolve to the highest versions and test nothing.
+      - run: uv sync --resolution lowest-direct
+      - run: uv run --no-sync python -c "import httpx, pydantic; print(httpx.__version__, pydantic.VERSION)"
+      - run: uv run --no-sync pytest
+
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy

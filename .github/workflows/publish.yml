@@ -1,0 +1,42 @@
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - name: The tag matches the package version
+        run: |
+          version=$(sed -nE 's/^__version__ = "(.+)"$/\1/p' src/proofage/_version.py)
+          test "v${version}" = "${GITHUB_REF_NAME}" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match _version.py ${version}"; exit 1; }
+      - run: uv sync --locked
+      - run: uv run pytest
+      - run: uv build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
