@@ -64,7 +64,7 @@ packages = ["src/proofage"]
 "AGENTS.md" = "proofage/AGENTS.md"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/proofage", "tests", "AGENTS.md", "README.md", "CHANGELOG.md", "LICENSE"]
+include = ["src/proofage", "tests", "examples", "AGENTS.md", "README.md", "CHANGELOG.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -81,15 +81,16 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["src"]
+files = ["src", "examples"]
 plugins = ["pydantic.mypy"]
 
-# Django ships no type information, so its decorators and return values are `Any`.
+# Django ships no type information, so its decorators and return values are `Any`
+# (`views` is the Django example).
 [[tool.mypy.overrides]]
 module = ["django.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["proofage.integrations.django"]
+module = ["proofage.integrations.django", "views"]
 disallow_untyped_decorators = false
 warn_return_any = false

@@ -49,50 +49,73 @@ async with AsyncProofAge() as client:
 
 ## Receiving results (webhooks)
 
-ProofAge POSTs the outcome to your workspace's webhook URL. Verify it with the **raw** request
-body — not a re-serialised copy of its JSON — and answer 2xx.
+ProofAge POSTs the outcome to your workspace's webhook URL. The framework extras verify it for
+you and hand your handler a typed `WebhookEvent`; install the one you use:
+
+```bash
+pip install "proofage[fastapi]"   # or proofage[django], proofage[flask]
+```
 
 FastAPI:
 
 ```python
-from fastapi import FastAPI, Request, Response
-from proofage import WebhookVerificationError, verify_webhook
-
-app = FastAPI()
+from proofage.integrations.fastapi import ProofAgeWebhook
 
 
 @app.post("/webhooks/proofage")
-async def proofage_webhook(request: Request) -> Response:
-    try:
-        event = verify_webhook(await request.body(), request.headers)
-    except WebhookVerificationError as error:
-        return Response(status_code=error.http_status)
+async def proofage_webhook(event: ProofAgeWebhook):
     print(event.verification_id, event.status, event.reason)
-    return Response(status_code=200)
 ```
 
-Django:
+Django (CSRF-exempt and POST-only; the event is `request.proofage_event`):
 
 ```python
 from django.http import HttpResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
-from proofage import WebhookVerificationError, verify_webhook
+from proofage.integrations.django import proofage_webhook
 
 
-@csrf_exempt
-@require_POST
-def proofage_webhook(request):
-    try:
-        event = verify_webhook(request.body, request.headers)
-    except WebhookVerificationError as error:
-        return HttpResponse(status=error.http_status)
-    ...
+@proofage_webhook
+def webhook(request):
+    event = request.proofage_event
     return HttpResponse(status=200)
 ```
 
+Flask:
+
+```python
+from proofage.integrations.flask import proofage_webhook
+
+
+@app.post("/webhooks/proofage")
+@proofage_webhook
+def webhook(event):
+    return "", 200
+```
+
+A request that fails verification never reaches your handler: it is answered 401 with the reason
+(`INVALID_SIGNATURE`, `TIMESTAMP_TOO_OLD`, …), 400 for a signed body that is not a webhook
+event, or 500 when the keys are not configured. The keys come from `PROOFAGE_API_KEY` and
+`PROOFAGE_SECRET_KEY`; to pass them explicitly use `@proofage_webhook(api_key=..., secret_key=...)`
+or, in FastAPI, `Depends(webhook_dependency(api_key=..., secret_key=...))`. The Django and Flask
+decorators are for synchronous views.
+
+Any other framework (aiohttp, Starlette, Litestar, …) calls the same check itself. Verify with the
+**raw** request body, not a re-serialised copy of its JSON:
+
+```python
+from proofage import WebhookVerificationError, verify_webhook
+
+try:
+    event = verify_webhook(raw_body, headers)
+except WebhookVerificationError as error:
+    ...  # answer error.http_status
+```
+
 A delivery can arrive more than once: de-duplicate on `event.delivery_id`, which stays the same
-on every automatic retry. Ready-made FastAPI, Django and Flask integrations are coming in 0.1.x.
+on every automatic retry.
+
+Runnable examples live in [`examples/`](https://github.com/ProofAge/python-sdk/tree/main/examples):
+a Telegram bot on aiogram, a FastAPI app and Django views.
 
 ## Statuses
 

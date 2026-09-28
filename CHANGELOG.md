@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased (0.3.0)
+
+- **Added:** webhook integrations as extras: `proofage[fastapi]`, `proofage[django]` and
+  `proofage[flask]` (`proofage.integrations.*`). Each verifies the request and hands the handler a
+  typed `WebhookEvent`; a failed verification is answered 401, 400 or 500 before your code runs.
+- **Added:** runnable examples in `examples/`: an aiogram Telegram bot, a FastAPI app and Django
+  views.
+
 ## 0.2.0 — 2026-09-28
 
 - **Changed:** `ConsentInfo.version` is an `int`, the type the API has always sent. 0.1.0

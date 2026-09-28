@@ -187,6 +187,21 @@ except WebhookVerificationError as error:
 }
 ```
 
+## Framework integrations
+
+Extras that wrap `verify_webhook` (install `proofage[fastapi]`, `proofage[django]` or
+`proofage[flask]`; importing one without its framework raises `ImportError` with the exact
+command). Each answers a failed verification itself (401, `INVALID_PAYLOAD` 400, `CONFIGURATION_ERROR`
+500) and never calls your handler.
+
+- FastAPI: `from proofage.integrations.fastapi import ProofAgeWebhook` — annotate a parameter
+  `event: ProofAgeWebhook`; explicit keys: `Depends(webhook_dependency(api_key=, secret_key=, tolerance=))`.
+  Error body: `{"detail": {"code", "message"}}`.
+- Django: `@proofage_webhook` (bare or with the keyword arguments) — CSRF-exempt, POST-only, sets
+  `request.proofage_event`; synchronous views. Error body: `{"error": {"code", "message"}}`.
+- Flask: `@proofage_webhook` (bare or with the keyword arguments) — passes the `WebhookEvent` as the
+  view's first argument. Error body: `{"error": {"code", "message"}}`.
+
 ## SDK identification
 
 Every request carries `X-ProofAge-Sdk: [wrapper tokens ]python/{version}` (wrappers pass

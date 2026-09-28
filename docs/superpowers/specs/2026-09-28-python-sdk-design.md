@@ -298,6 +298,8 @@ def webhook(event):
     ...
 ```
 
+Implementation notes (0.3.0): the bare forms above read the keys from the environment; for keys held elsewhere (Django settings, a secrets manager) the Django and Flask decorators also take `api_key=`, `secret_key=` and `tolerance=` (`@proofage_webhook(api_key=..., secret_key=...)`), and FastAPI has `webhook_dependency(...)` to use with `Depends`. The extras' floors are `fastapi>=0.100`, `flask>=3.0`, `django>=5.2`. Error bodies follow each framework's habit: FastAPI `{"detail": {"code", "message"}}`, Django and Flask `{"error": {"code", "message"}}`. The Django and Flask decorators are for synchronous views.
+
 aiogram needs no integration of its own: a bot creates links with `AsyncProofAge` and receives results through one of the above, or through `verify_webhook` in an aiohttp handler. `examples/aiogram_bot/` shows the whole loop (a `/verify` command that sends the link, a webhook that messages the user the outcome) and is the seed of the separate bot-template repository (D8).
 
 ### 7.3 Agents (0.2.0)
