@@ -24,21 +24,20 @@ All paths are relative to `/Users/nikolay/Projects/ProofAge/` unless absolute. T
 | D3 | Models are **lenient**: unknown fields are kept, unknown enum values arrive as plain strings, nothing raises on a field the API adds later. An SDK must never turn an additive API change into a crash on `get()` (§4). |
 | D4 | Both a **sync** `ProofAge` and an **async** `AsyncProofAge` client with identical surfaces. aiogram and FastAPI are async; Django views, scripts and Celery tasks are mostly sync. |
 | D5 | **Full `/v1` parity** with the Node and PHP SDKs, drift-tested against the app's OpenAPI document (§8). Parity is not optional: the contract test fails on any spec operation without an SDK method. |
-| D6 | **0.1.0** ships the core plus webhook integrations as extras: `proofage[fastapi]`, `proofage[django]`, `proofage[flask]`, and an aiogram bot in `examples/`. |
+| D6 | **0.1.0 ships as soon as the core is green** (golden vectors, contract test, both clients), to claim the name on PyPI. The webhook integrations follow in **0.1.x** as extras: `proofage[fastapi]`, `proofage[django]`, `proofage[flask]`, with an aiogram bot in `examples/`. |
 | D7 | **0.2.0** ships `proofage.agents`: one framework-neutral set of tool definitions with thin exporters for the OpenAI and Anthropic tool formats. No per-framework wrappers for LangChain or CrewAI; they take the neutral definitions (documented) or connect to the ProofAge MCP server directly. |
 | D8 | The ready-to-deploy Telegram bot is a **separate repository** built on this SDK, not part of the package. |
-| D9 | Publishing uses **PyPI Trusted Publishing** from GitHub Actions on `v*` tags, under a PyPI organisation `ProofAge`. No API tokens anywhere. |
+| D9 | Publishing uses **PyPI Trusted Publishing** from GitHub Actions on `v*` tags. No API tokens anywhere. The project starts on the owner's PyPI account with a second maintainer as a backup; a PyPI organisation `ProofAge` is optional (free only for community projects, a monthly fee for companies) and the project can be moved into one later. |
 | D10 | Every request **identifies the SDK and its version** with `X-ProofAge-Sdk: python/{version}` and a `ProofAge-Python/{version} (Python {x.y.z})` User-Agent, the contract every ProofAge client follows since 2026-09-28 (php-sdk 0.3.0, laravel-client 0.9.0, @proofage/node 0.7.0, the WordPress plugin, the Shopify app, browser SDK 1.3). It is how support tells SDK traffic from a hand-written client and which version a customer runs (§3.3). |
+| D11 | **Support slightly older Pythons, with a published limit.** People upgrade late, so a Python version stays supported for **12 months after its upstream end of life**, or until a runtime dependency (httpx, Pydantic) stops shipping for it, whichever comes first. The floor today is **3.10** (§10.1). The README lists every supported version with the date it leaves, so the limit is never a surprise. |
 
 ### 1.2 Defaults this spec assumes (owner to confirm or override)
 
 | # | Assumption | Why |
 |---|---|---|
-| A1 | `requires-python = ">=3.11"`. | 3.10 leaves security support in October 2026, weeks after 0.1.0. The sibling SDKs test only versions upstream still supports. |
 | A2 | Transport is **httpx** (`>=0.27,<1`). | One library for sync and async with the same request model; it is what openai and anthropic use, so most Python agent projects already have it. |
 | A3 | Build with **hatchling**, develop with **uv**, lint with **ruff**, type-check with **mypy --strict**, test with **pytest** + **respx**. | The current mainstream toolchain; `py.typed` ships so consumers get the types. |
 | A4 | Licence **MIT**, as `proofage-php-sdk/LICENSE.md` and `proofage-node-client/LICENSE`. | Consistency. |
-| A5 | Claim the name early: publish `0.1.0` as soon as the core passes the golden vectors and the contract test, even if extras land in `0.1.x`. | A pending publisher on PyPI does not reserve a name; only a first upload does. |
 
 ### 1.3 Non-goals
 
@@ -186,7 +185,7 @@ class ProofAgeModel(BaseModel):
 ```
 
 - **Unknown fields are kept** (`extra="allow"`) and readable through `model.model_extra`. A new API field never breaks parsing.
-- **Open enums.** `VerificationStatus`, `BlockFaceReasonCode` and similar are `StrEnum`s, but every field that holds one is typed `VerificationStatus | str`. A value the SDK does not know yet arrives as the raw string instead of raising. The enum carries the documented set, including `documents_required` (surfaced from the attempt, not a verification status, as `AGENTS.md` in the Node SDK notes).
+- **Open enums.** `VerificationStatus`, `BlockFaceReasonCode` and similar are `str, Enum` classes (`StrEnum` is 3.11+ and the floor is 3.10), but every field that holds one is typed `VerificationStatus | str`. A value the SDK does not know yet arrives as the raw string instead of raising. The enum carries the documented set, including `documents_required` (surfaced from the attempt, not a verification status, as `AGENTS.md` in the Node SDK notes).
 - **`reason` is an open string.** Decline and resubmission reasons are dotted codes from a growing server catalog; they are not modelled as an enum.
 - **Timestamps** parse to aware `datetime`. Nullable fields are `X | None`, and fields the API always sends are required, so `None` means the API sent `null`, not "absent".
 - **`model_dump(mode="json")`** gives a plain dict, for logs, JSON storage and handing to an LLM.
@@ -311,7 +310,7 @@ The default tool set is deliberately narrow, because an agent loops and reads wh
 
 | Tool | Default | Why |
 |---|---|---|
-| `create_verification`, `get_verification`, `get_workspace` | on | What an agent that onboards people needs |
+| `create_verification`, `get_verification`, `get_workspace` | on | What an agent that onboards people needs. `get_verification` answers with the status-level fields only (`id`, `status`, `reason`, `external_id`, `created_at`, `updated_at`), a projection of `GET /verifications/{id}` made in the SDK: the API has no status-only endpoint and needs none. `external_metadata` and `duplicate_check` stay out of the model's context unless `include_personal_data=True` |
 | `get_verification_document`, `get_age_estimation` | **off**; `include_personal_data=True` | Names, dates of birth and document numbers should not flow into a model's context unless the integrator decides so |
 | `block_face` | **off**; `include_destructive=True` | Irreversible for the person; the ProofAge consoles require a reason code for the same reason |
 | capture endpoints, media download | never | Binary data and camera steps are not agent work |
@@ -348,12 +347,28 @@ Written in this order, each layer green before the next starts:
 
 ## 10. Tooling, CI and release
 
-- **CI** (`ci.yml`, on push and pull request): Python 3.11, 3.12, 3.13, 3.14 on Linux; one extra leg per integration at the framework's oldest supported version; ruff and mypy on the newest Python only, so a tool-version drift cannot break the whole matrix (the lesson the PHP SDK learned when an unpinned Pint reddened one matrix leg). A Python version leaves the matrix when its **security** window closes.
+- **CI** (`ci.yml`, on push and pull request): every supported Python (3.10–3.14 today, §10.1) on Linux; one extra leg per integration at the framework's oldest supported version; ruff and mypy on the newest Python only, so a tool-version drift cannot break the whole matrix (the lesson the PHP SDK learned when an unpinned Pint reddened one matrix leg). A Python version leaves the matrix on the date §10.1 gives for it, not earlier.
 - **Versioning**: `src/proofage/_version.py` is the single source; hatchling reads it.
 - **Release**: `scripts/check_release.py X.Y.Z` reads `https://pypi.org/pypi/proofage/json` and refuses a version already served or below the latest, because the registry, not `git tag`, is the truth (the laravel-client tags were once missing published releases). Then: bump, commit `chore: release X.Y.Z`, push, tag `vX.Y.Z`, push the tag. `publish.yml` builds sdist and wheel and publishes through Trusted Publishing, environment `pypi`. Never `twine upload` by hand.
-- **One-time setup, by the owner:** PyPI account with 2FA; PyPI organisation `ProofAge`; a pending publisher for owner `ProofAge`, repo `python-sdk`, workflow `publish.yml`, environment `pypi`; the matching `pypi` environment in the GitHub repo settings. Optionally the same on test.pypi.org for a dry run.
+- **One-time setup, by the owner:** PyPI account with 2FA and a second maintainer; a pending publisher for owner `ProofAge`, repo `python-sdk`, workflow `publish.yml`, environment `pypi`; the matching `pypi` environment in the GitHub repo settings. Optionally the same on test.pypi.org for a dry run.
 
 ---
+
+### 10.1 Supported Python versions (D11)
+
+| Python | Upstream end of life | Supported by `proofage` until | Why that date |
+|---|---|---|---|
+| 3.10 | 2026-10 | 2027-10 | 12 months after end of life |
+| 3.11 | 2027-10 | 2028-10 | same rule |
+| 3.12 | 2028-10 | 2029-10 | same rule |
+| 3.13 | 2029-10 | 2030-10 | same rule |
+| 3.14 | 2030-10 | 2031-10 | same rule |
+
+3.9 is not supported: it reached end of life in October 2025, so its grace year ends weeks after 0.1.0, and supporting it would mean `Optional[...]` in every model because Pydantic cannot evaluate `X | None` on 3.9.
+
+The extras follow the same idea against their own framework: each supports the oldest framework release that upstream still maintains **and** that runs on the Python floor. Django 4.2 is past that line (its LTS ended in April 2026), so `proofage[django]` needs Django 5.2 LTS (Python 3.10+, supported until April 2028); FastAPI and Flask take their current lines. A floor rises only in a **minor** release, announced a release ahead in `CHANGELOG.md`, never in a patch.
+
+The same table, with dates, goes in the README under "Supported versions".
 
 ## 11. Changes outside this repo
 
@@ -370,13 +385,14 @@ Later, not part of this spec: the Telegram bot template repository (D8), built o
 
 | Release | Contents | Done when |
 |---|---|---|
-| **0.1.0** | Config, signing, transport, both clients, all `/v1` methods, models, errors, `verify_webhook`, FastAPI/Django/Flask extras, `examples/`, `AGENTS.md`, README, CI, publish workflow | Golden vectors, contract test and the full suite pass on 3.11–3.14; a real verification created against a test workspace and its webhook verified end to end with the FastAPI example |
+| **0.1.0** | Config, signing, transport, SDK identification, both clients, all `/v1` methods, models, errors, `verify_webhook`, `AGENTS.md`, README, CI, publish workflow | Golden vectors, contract test and the full suite pass on 3.10–3.14; a real verification created against a test workspace and its webhook verified with `verify_webhook`. Published at once, to claim the name |
+| **0.1.x** | FastAPI, Django and Flask extras; `examples/` (aiogram bot, FastAPI app, Django view) | Each extra passes through its framework's test client; the FastAPI example verifies a real webhook end to end |
 | **0.2.0** | `proofage.agents` with the tool policy of §7.3, OpenAI and Anthropic exporters, LangChain/CrewAI/PydanticAI adapter snippets in the README | A tool loop with each vendor SDK creates a verification against a test workspace |
 
 ---
 
-## 13. Open questions
+## 13. Resolved questions
 
-1. **A1**: is 3.11 the right floor, or does a known prospect need 3.10 until its October 2026 end of life?
-2. **A5**: publish 0.1.0 the moment the core is green (name claimed sooner, extras in 0.1.x), or hold it for the extras?
-3. Should `proofage.agents` also offer a `get_verification_status` tool that returns only `status` and `reason`, so the default set exposes even less than `get_verification`'s `external_metadata`?
+1. **Python floor:** 3.10, under the 12-months-after-end-of-life rule (D11, §10.1). The owner wants slightly older versions supported as long as they do not get in the way, and the limit written down everywhere.
+2. **When to publish:** 0.1.0 as soon as the core is green; extras in 0.1.x (D6).
+3. **A status-only agent tool:** not a separate tool. The API has no status-only endpoint, and `get_verification` already answers with the status-level projection by default (§7.3).
