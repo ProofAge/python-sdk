@@ -21,7 +21,7 @@ from typing import Any, overload
 
 from ..errors import WebhookVerificationError
 from ..webhooks import verify_webhook
-from ._common import error_body, missing_extra
+from ._common import error_body, missing_extra, report_failure
 
 try:
     from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -76,6 +76,7 @@ def proofage_webhook(
                     tolerance=tolerance,
                 )
             except WebhookVerificationError as error:
+                report_failure(error)
                 return JsonResponse(error_body(error), status=error.http_status)
             request.proofage_event = event
             return inner(request, *args, **kwargs)

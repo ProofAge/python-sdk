@@ -69,3 +69,11 @@ def test_keys_can_be_passed_to_the_decorator() -> None:
 
 def test_importing_without_flask_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     assert_needs_extra(monkeypatch, "proofage.integrations.flask", "flask")
+
+
+def test_a_misconfigured_server_says_so_in_its_own_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="proofage"):
+        make_client().post("/webhooks/proofage", data=BODY, headers=signed_headers())
+    assert "PROOFAGE_SECRET_KEY" in caplog.text

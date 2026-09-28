@@ -189,7 +189,7 @@ except WebhookVerificationError as error:
 
 ## Framework integrations
 
-Extras that wrap `verify_webhook` (install `proofage[fastapi]`, `proofage[django]` or
+Extras (floors: `fastapi>=0.100`, `flask>=3.0`, `django>=5.2`) that wrap `verify_webhook` (install `proofage[fastapi]`, `proofage[django]` or
 `proofage[flask]`; importing one without its framework raises `ImportError` with the exact
 command). Each answers a failed verification itself (401, `INVALID_PAYLOAD` 400, `CONFIGURATION_ERROR`
 500) and never calls your handler.

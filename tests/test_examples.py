@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from proofage import AsyncProofAge
 
-from .conftest import API, API_KEY, BASE_URL, SECRET_KEY
+from .conftest import API_KEY, BASE_URL, SECRET_KEY
 from .integration_support import BODY, configure_keys, signed_headers
 from .test_models import VERIFICATION
 
@@ -40,8 +40,12 @@ class RecordingBot:
 
     def __init__(self) -> None:
         self.sent: list[tuple[int, str]] = []
+        self.fail_next = False
 
     async def send_message(self, chat_id: int, text: str) -> None:
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("Telegram is down")
         self.sent.append((chat_id, text))
 
 
@@ -91,6 +95,65 @@ def test_the_aiogram_bot_reports_the_outcome_once_per_delivery(
     assert bot.sent[0][0] == 4242
 
 
+def post_to_bot(bot: RecordingBot, body: bytes, times: int = 1) -> list[int]:
+    bot_module = load("aiogram_bot/bot.py")
+
+    async def main() -> list[int]:
+        async with AioTestClient(TestServer(bot_module.build_webhook_app(bot))) as client:
+            statuses = []
+            for _ in range(times):
+                response = await client.post(
+                    "/webhooks/proofage", data=body, headers=webhook_headers(body)
+                )
+                statuses.append(response.status)
+            return statuses
+
+    return asyncio.run(main())
+
+
+def test_the_aiogram_bot_still_tells_the_user_when_a_send_failed_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_keys(monkeypatch)
+    bot = RecordingBot()
+    bot.fail_next = True
+    body = BODY.replace(b'"external_id":"u-1"', b'"external_id":"4242"')
+
+    # ProofAge retries a delivery answered with an error, under the same delivery id.
+    assert post_to_bot(bot, body, times=2) == [500, 200]
+    assert bot.sent == [(4242, "Thanks, your check is complete.")]
+
+
+@pytest.mark.parametrize("external_id", ["u-1", "order 7", ""])
+def test_the_aiogram_bot_ignores_sessions_it_did_not_create(
+    monkeypatch: pytest.MonkeyPatch, external_id: str
+) -> None:
+    configure_keys(monkeypatch)
+    bot = RecordingBot()
+    body = BODY.replace(b'"external_id":"u-1"', f'"external_id":"{external_id}"'.encode())
+
+    assert post_to_bot(bot, body) == [200]
+    assert bot.sent == []
+
+
+def test_the_django_example_webhook_view_verifies(monkeypatch: pytest.MonkeyPatch) -> None:
+    from django.test import RequestFactory
+
+    if not settings.configured:
+        settings.configure(DEBUG=True, ALLOWED_HOSTS=["*"], SECRET_KEY="test", USE_TZ=True)
+    configure_keys(monkeypatch)
+    views: Any = load("django_view/views.py")
+
+    def post(body: bytes, headers: dict[str, str]) -> int:
+        request = RequestFactory().post(
+            "/webhooks/proofage/", data=body, content_type="application/json", headers=headers
+        )
+        return int(views.webhook(request).status_code)
+
+    assert post(BODY, webhook_headers()) == 200
+    assert post(BODY.replace(b"approved", b"declined"), webhook_headers()) == 401
+
+
 def test_the_fastapi_example_creates_and_receives(
     monkeypatch: pytest.MonkeyPatch, api: respx.MockRouter
 ) -> None:
@@ -126,4 +189,3 @@ def test_the_django_example_imports_and_redirects(
     response = views.start(request)
     assert response.status_code == 302
     assert response["Location"] == VERIFICATION["url"]
-    assert API.startswith(BASE_URL)

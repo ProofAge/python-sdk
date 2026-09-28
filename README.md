@@ -59,7 +59,10 @@ pip install "proofage[fastapi]"   # or proofage[django], proofage[flask]
 FastAPI:
 
 ```python
+from fastapi import FastAPI
 from proofage.integrations.fastapi import ProofAgeWebhook
+
+app = FastAPI()
 
 
 @app.post("/webhooks/proofage")
@@ -97,7 +100,9 @@ A request that fails verification never reaches your handler: it is answered 401
 event, or 500 when the keys are not configured. The keys come from `PROOFAGE_API_KEY` and
 `PROOFAGE_SECRET_KEY`; to pass them explicitly use `@proofage_webhook(api_key=..., secret_key=...)`
 or, in FastAPI, `Depends(webhook_dependency(api_key=..., secret_key=...))`. The Django and Flask
-decorators are for synchronous views.
+decorators are for synchronous views, and nothing in front of them (a middleware, an earlier
+`request.body` read in Django) may have consumed the body. A missing key is also logged as a
+warning by the `proofage` logger, so it shows in your own logs and not only in ProofAge's.
 
 Any other framework (aiohttp, Starlette, Litestar, …) calls the same check itself. Verify with the
 **raw** request body, not a re-serialised copy of its JSON:
@@ -226,6 +231,10 @@ announced one release ahead in the changelog.
 | 3.12 | 2028-10 | 2029-10 |
 | 3.13 | 2029-10 | 2030-10 |
 | 3.14 | 2030-10 | 2031-10 |
+
+The webhook extras follow the same rule against their framework: each supports the oldest release
+that still runs on the Python floor. Today that is `fastapi>=0.100`, `flask>=3.0` and
+`django>=5.2` (the 5.2 LTS, supported by Django until April 2028; Django 4.2 is out of support).
 
 ## AI agents
 

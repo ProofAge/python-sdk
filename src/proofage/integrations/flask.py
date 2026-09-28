@@ -21,7 +21,7 @@ from typing import Any, overload
 from ..errors import WebhookVerificationError
 from ..models import WebhookEvent
 from ..webhooks import verify_webhook
-from ._common import error_body, missing_extra
+from ._common import error_body, missing_extra, report_failure
 
 try:
     from flask import Response, jsonify, request
@@ -66,12 +66,13 @@ def proofage_webhook(
             try:
                 event: WebhookEvent = verify_webhook(
                     request.get_data(),
-                    dict(request.headers),
+                    dict(request.headers.items()),
                     api_key=api_key,
                     secret_key=secret_key,
                     tolerance=tolerance,
                 )
             except WebhookVerificationError as error:
+                report_failure(error)
                 response: Response = jsonify(error_body(error))
                 response.status_code = error.http_status
                 return response

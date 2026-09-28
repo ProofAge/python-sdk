@@ -18,12 +18,13 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from proofage import ProofAge, VerificationStatus
 from proofage.integrations.django import proofage_webhook
 
+client = ProofAge()  # one client (and connection pool) for the whole process
+
 
 @login_required
 def start(request: HttpRequest) -> HttpResponse:
     """Create a session for the logged-in user and send them to it."""
-    with ProofAge() as client:
-        verification = client.verifications.create(external_id=str(request.user.pk))
+    verification = client.verifications.create(external_id=str(request.user.pk))
     return HttpResponseRedirect(verification.url)
 
 

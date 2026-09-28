@@ -19,7 +19,7 @@ from typing import Annotated
 from ..errors import WebhookVerificationError
 from ..models import WebhookEvent
 from ..webhooks import verify_webhook
-from ._common import error_body, missing_extra
+from ._common import error_body, missing_extra, report_failure
 
 try:
     from fastapi import Depends, HTTPException, Request
@@ -47,6 +47,7 @@ def webhook_dependency(
                 tolerance=tolerance,
             )
         except WebhookVerificationError as error:
+            report_failure(error)
             raise HTTPException(
                 status_code=error.http_status, detail=error_body(error)["error"]
             ) from error

@@ -18,7 +18,8 @@ from pydantic import BaseModel
 from proofage import AsyncProofAge
 from proofage.integrations.fastapi import ProofAgeWebhook
 
-statuses: dict[str, str] = {}  # a real app keeps this in its database
+# A real app keeps this in its database, and ignores a late retry of an older delivery.
+statuses: dict[str, str] = {}
 
 
 @asynccontextmanager

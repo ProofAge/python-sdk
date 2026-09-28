@@ -87,3 +87,11 @@ def test_keys_can_be_passed_instead_of_read_from_the_environment() -> None:
 
 def test_importing_without_fastapi_names_the_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     assert_needs_extra(monkeypatch, "proofage.integrations.fastapi", "fastapi")
+
+
+def test_a_misconfigured_server_says_so_in_its_own_log(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("WARNING", logger="proofage"):
+        make_client().post("/webhooks/proofage", content=BODY, headers=signed_headers())
+    assert "PROOFAGE_SECRET_KEY" in caplog.text

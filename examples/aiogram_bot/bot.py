@@ -32,16 +32,16 @@ from proofage import (
 )
 
 OUTCOMES = {
-    VerificationStatus.APPROVED: "Thanks, your check is complete.",
-    VerificationStatus.DECLINED: "Sorry, we could not verify you.",
-    VerificationStatus.RESUBMISSION_REQUESTED: "Please try again: send /verify for a new link.",
+    VerificationStatus.APPROVED.value: "Thanks, your check is complete.",
+    VerificationStatus.DECLINED.value: "Sorry, we could not verify you.",
+    VerificationStatus.RESUBMISSION_REQUESTED.value: "Please try again with /verify.",
 }
 
 
 async def start_verification(client: AsyncProofAge, chat_id: int) -> str:
     """Create a session for this chat and return the message that carries its link."""
     verification = await client.verifications.create(external_id=str(chat_id))
-    return f"Open this link on your phone to verify your age:\n{verification.url}"
+    return f"Open this link on your phone to verify yourself:\n{verification.url}"
 
 
 def build_dispatcher(client: AsyncProofAge) -> Dispatcher:
@@ -65,15 +65,19 @@ def build_webhook_app(bot: Bot) -> web.Application:
             return web.json_response(
                 {"error": {"code": error.code, "message": error.message}}, status=error.http_status
             )
+        # Sessions made elsewhere (the console, another integration) have their own external_id.
+        if event.external_id is None or not event.external_id.lstrip("-").isdigit():
+            return web.Response(status=200)
         # A delivery can arrive more than once: its id is the same on every retry.
         if event.delivery_id in delivered:
             return web.Response(status=200)
+
+        text = OUTCOMES.get(str(event.status))
+        if text is not None:
+            # If this raises, ProofAge retries the delivery (500), so remember it only afterwards.
+            await bot.send_message(int(event.external_id), text)
         if event.delivery_id:
             delivered.add(event.delivery_id)
-
-        text = OUTCOMES.get(event.status)  # type: ignore[call-overload]
-        if text is not None and event.external_id is not None:
-            await bot.send_message(int(event.external_id), text)
         return web.Response(status=200)
 
     app = web.Application()
@@ -86,8 +90,12 @@ async def main() -> None:
     runner = web.AppRunner(build_webhook_app(bot))
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", int(os.environ.get("PORT", "8080"))).start()
-    async with AsyncProofAge() as client:
-        await build_dispatcher(client).start_polling(bot)
+    try:
+        async with AsyncProofAge() as client:
+            await build_dispatcher(client).start_polling(bot)
+    finally:
+        await runner.cleanup()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
