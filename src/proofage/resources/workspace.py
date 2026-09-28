@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+from ..models import ConsentInfo, WorkspaceInfo
 
 if TYPE_CHECKING:
     from .._async_client import AsyncProofAge
@@ -15,11 +17,13 @@ class Workspace:
     def __init__(self, client: ProofAge) -> None:
         self._client = client
 
-    def get(self) -> Any:
-        return self._client._get("workspace")
+    def get(self) -> WorkspaceInfo:
+        """`GET /workspace`."""
+        return WorkspaceInfo.model_validate(self._client._get("workspace"))
 
-    def consent(self) -> Any:
-        return self._client._get("consent")
+    def consent(self) -> ConsentInfo:
+        """`GET /consent`: the consent text version a person must accept."""
+        return ConsentInfo.model_validate(self._client._get("consent"))
 
 
 class AsyncWorkspace:
@@ -28,8 +32,10 @@ class AsyncWorkspace:
     def __init__(self, client: AsyncProofAge) -> None:
         self._client = client
 
-    async def get(self) -> Any:
-        return await self._client._get("workspace")
+    async def get(self) -> WorkspaceInfo:
+        """`GET /workspace`."""
+        return WorkspaceInfo.model_validate(await self._client._get("workspace"))
 
-    async def consent(self) -> Any:
-        return await self._client._get("consent")
+    async def consent(self) -> ConsentInfo:
+        """`GET /consent`: the consent text version a person must accept."""
+        return ConsentInfo.model_validate(await self._client._get("consent"))
