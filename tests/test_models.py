@@ -5,6 +5,7 @@ from typing import Any
 
 from proofage.models import (
     AgeEstimation,
+    ConsentInfo,
     CreatedVerification,
     VerificationDocument,
     VerificationStatus,
@@ -117,3 +118,19 @@ def test_webhook_event_optional_blocks() -> None:
     assert event.duplicate_of is not None
     assert event.manual_moderation is None
     assert event.delivery_id is None
+
+
+def test_a_number_where_a_string_is_documented_does_not_break_parsing() -> None:
+    # The live API sends the consent version as an integer although the spec says string.
+    consent = ConsentInfo.model_validate(
+        {"id": 3, "version": 2, "text_sha256": "ab" * 32, "url": "https://x"}
+    )
+    assert consent.version == "2"
+
+
+def test_enum_members_print_as_their_api_values() -> None:
+    from proofage.models import BlockFaceReasonCode
+
+    assert str(VerificationStatus.APPROVED) == "approved"
+    assert f"{VerificationStatus.DECLINED}" == "declined"
+    assert str(BlockFaceReasonCode.UNDERAGE) == "underage"

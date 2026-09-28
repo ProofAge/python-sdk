@@ -11,12 +11,26 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProofAgeModel(BaseModel):
-    """Base of every response model; extra fields land in `model_extra`."""
+    """Base of every response model; extra fields land in `model_extra`.
 
-    model_config = ConfigDict(extra="allow")
+    A number sent where a string is documented is read as its string: the live API
+    sends the consent version as an integer although its spec says string.
+    """
+
+    model_config = ConfigDict(extra="allow", coerce_numbers_to_str=True)
 
 
-class VerificationStatus(str, Enum):
+class _ApiEnum(str, Enum):
+    """A `str` enum that prints as its API value on every Python (what 3.11's `StrEnum` does)."""
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    def __format__(self, format_spec: str) -> str:
+        return format(str(self.value), format_spec)
+
+
+class VerificationStatus(_ApiEnum):
     """The documented statuses. `documents_required` comes from the latest attempt."""
 
     CREATED = "created"
@@ -31,7 +45,7 @@ class VerificationStatus(str, Enum):
     DOCUMENTS_REQUIRED = "documents_required"
 
 
-class BlockFaceReasonCode(str, Enum):
+class BlockFaceReasonCode(_ApiEnum):
     """Why a face is blocked; send one whenever a person made the decision."""
 
     PRESENTATION_ATTACK = "presentation_attack"
