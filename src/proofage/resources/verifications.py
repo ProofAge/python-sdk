@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager, suppress
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+import httpx
+
+from ..errors import TransportError
 from ..models import (
     AcceptConsentResult,
     AgeEstimation,
@@ -13,11 +20,19 @@ from ..models import (
     Verification,
     VerificationDocument,
 )
-from ._payloads import compact, read_upload, upload_fields, verification_path
+from ._payloads import compact, path_segment, read_upload, upload_fields, verification_path
 
 if TYPE_CHECKING:
     from .._async_client import AsyncProofAge
     from .._client import ProofAge
+
+
+def _media_path(verification_id: str, media_id: str) -> str:
+    return verification_path(verification_id, f"/media/{path_segment(media_id, 'media_id')}")
+
+
+def _temporary_sibling(target: Path) -> tuple[int, str]:
+    return tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".part")
 
 
 class Verifications:
@@ -137,6 +152,42 @@ class Verifications:
         self._client._post_multipart(
             verification_path(verification_id, "/media"), fields, filename=name, content=content
         )
+
+    @contextmanager
+    def download_media(self, verification_id: str, media_id: str) -> Iterator[Iterator[bytes]]:
+        """`GET /verifications/{id}/media/{media}` as a byte stream.
+
+        Take `media_id` from `document().media`; a media whose `url` is None is gone.
+        An HTTP status is never retried (a queue's backoff should own that wait); a
+        transport failure is retried `download_retry_attempts` times, before the first byte.
+        """
+        with self._client._stream_media(_media_path(verification_id, media_id)) as response:
+
+            def chunks() -> Iterator[bytes]:
+                try:
+                    yield from response.iter_bytes()
+                except httpx.TransportError as exc:
+                    raise TransportError(f"Download interrupted: {exc}") from exc
+
+            yield chunks()
+
+    def download_media_to(
+        self, verification_id: str, media_id: str, path: str | os.PathLike[str]
+    ) -> Path:
+        """Stream a media file to `path`; a failure never leaves a partial file there."""
+        target = Path(path)
+        with self.download_media(verification_id, media_id) as chunks:
+            descriptor, temporary = _temporary_sibling(target)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    for chunk in chunks:
+                        handle.write(chunk)
+                os.replace(temporary, target)
+            except BaseException:
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary)
+                raise
+        return target
 
 
 class AsyncVerifications:
@@ -261,3 +312,37 @@ class AsyncVerifications:
         await self._client._post_multipart(
             verification_path(verification_id, "/media"), fields, filename=name, content=content
         )
+
+    @asynccontextmanager
+    async def download_media(
+        self, verification_id: str, media_id: str
+    ) -> AsyncIterator[AsyncIterator[bytes]]:
+        """`GET /verifications/{id}/media/{media}` as an async byte stream (see the sync twin)."""
+        async with self._client._stream_media(_media_path(verification_id, media_id)) as response:
+
+            async def chunks() -> AsyncIterator[bytes]:
+                try:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+                except httpx.TransportError as exc:
+                    raise TransportError(f"Download interrupted: {exc}") from exc
+
+            yield chunks()
+
+    async def download_media_to(
+        self, verification_id: str, media_id: str, path: str | os.PathLike[str]
+    ) -> Path:
+        """Stream a media file to `path`; a failure never leaves a partial file there."""
+        target = Path(path)
+        async with self.download_media(verification_id, media_id) as chunks:
+            descriptor, temporary = _temporary_sibling(target)
+            try:
+                with os.fdopen(descriptor, "wb") as handle:
+                    async for chunk in chunks:
+                        handle.write(chunk)
+                os.replace(temporary, target)
+            except BaseException:
+                with suppress(FileNotFoundError):
+                    os.unlink(temporary)
+                raise
+        return target
