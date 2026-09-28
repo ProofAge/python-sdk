@@ -6,9 +6,25 @@ differ in how they send and how they sleep.
 
 from __future__ import annotations
 
+import email.utils
 import json
+import math
+import mimetypes
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import timezone
 from typing import Any
 
+import httpx
+
+from ._config import SDK_HEADER, ClientConfig
+from ._signing import (
+    canonical_multipart_request,
+    canonical_request,
+    serialize_json_body,
+    sign,
+    to_multipart_fields,
+)
 from .errors import (
     AuthenticationError,
     NotFoundError,
@@ -118,3 +134,123 @@ def decode_success(
             status_code=status,
             response_body=text,
         ) from exc
+
+
+DOWNLOAD_ACCEPT = "application/json, */*;q=0.8"
+"""The API renders errors as JSON only when JSON is the first acceptable type."""
+
+_IDEMPOTENT = frozenset({"GET", "HEAD"})
+_NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout)
+
+
+@dataclass(frozen=True)
+class PreparedRequest:
+    """A signed request, ready for either client to send."""
+
+    method: str
+    url: str
+    headers: dict[str, str]
+    content: bytes | None = None
+    data: dict[str, str] | None = None
+    files: list[tuple[str, tuple[str, bytes, str]]] | None = None
+
+
+def api_path(config: ClientConfig, endpoint: str) -> str:
+    """`/{version}/{endpoint}`, the path the server signs."""
+    return f"/{config.version}/{endpoint.lstrip('/')}"
+
+
+def _base_headers(config: ClientConfig, accept: str) -> dict[str, str]:
+    headers = {SDK_HEADER: config.sdk_header, "Accept": accept, "X-API-Key": config.api_key}
+    if config.user_agent is not None:
+        headers["User-Agent"] = config.user_agent
+    return headers
+
+
+def prepare_json(
+    config: ClientConfig,
+    method: str,
+    endpoint: str,
+    payload: Mapping[str, Any] | None = None,
+    *,
+    accept: str = "application/json",
+) -> PreparedRequest:
+    """Serialise once, sign those bytes, send those bytes."""
+    path = api_path(config, endpoint)
+    body = serialize_json_body(payload or {})
+    headers = _base_headers(config, accept)
+    headers["X-HMAC-Signature"] = sign(config.secret_key, canonical_request(method, path, body))
+    content: bytes | None = None
+    if body:
+        headers["Content-Type"] = "application/json"
+        content = body.encode("utf-8")
+    return PreparedRequest(method.upper(), config.base_url + path, headers, content=content)
+
+
+def prepare_multipart(
+    config: ClientConfig,
+    method: str,
+    endpoint: str,
+    fields: Mapping[str, Any],
+    *,
+    filename: str,
+    content: bytes,
+) -> PreparedRequest:
+    """A one-file multipart upload whose text fields are exactly the strings signed."""
+    path = api_path(config, endpoint)
+    wire = to_multipart_fields(fields)
+    headers = _base_headers(config, "application/json")
+    headers["X-HMAC-Signature"] = sign(
+        config.secret_key, canonical_multipart_request(method, path, wire, [content])
+    )
+    mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return PreparedRequest(
+        method.upper(),
+        config.base_url + path,
+        headers,
+        data=wire,
+        files=[("file", (filename, content, mime))],
+    )
+
+
+def is_retryable_status(method: str, status: int) -> bool:
+    """GET: 408, 429, 5xx. POST: only 429, which the rate limiter answers before anything runs."""
+    if method.upper() in _IDEMPOTENT:
+        return status in (408, 429) or 500 <= status < 600
+    return status == 429
+
+
+def is_retryable_exception(method: str, exc: httpx.TransportError) -> bool:
+    """GET: any transport failure. POST: only failures before a byte was sent."""
+    if method.upper() in _IDEMPOTENT:
+        return True
+    return isinstance(exc, _NEVER_SENT)
+
+
+def parse_retry_after(value: str | None, now: float) -> float | None:
+    """`Retry-After` in seconds, from delta-seconds or an HTTP date."""
+    if not value:
+        return None
+    value = value.strip()
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(value)
+        except (TypeError, ValueError, IndexError):
+            return None
+        if when is None:
+            return None
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, when.timestamp() - now)
+    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+
+
+def retry_delay(
+    config: ClientConfig, attempt: int, status: int | None, retry_after: float | None
+) -> float:
+    """A 429's `Retry-After` when sent, otherwise `retry_delay * attempt number`."""
+    if status == 429 and retry_after is not None:
+        return retry_after
+    return config.retry_delay * (attempt + 1)
