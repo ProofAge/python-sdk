@@ -25,6 +25,7 @@ from ._transport import (
     retry_delay,
 )
 from .errors import TransportError
+from .resources.verifications import AsyncVerifications
 from .resources.workspace import AsyncWorkspace
 
 
@@ -63,6 +64,7 @@ class AsyncProofAge:
         self._http = http_client or httpx.AsyncClient(timeout=self._config.timeout)
         self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
         self.workspace = AsyncWorkspace(self)
+        self.verifications = AsyncVerifications(self)
 
     def __repr__(self) -> str:
         return f"AsyncProofAge({self._config!r})"

@@ -24,6 +24,7 @@ from ._transport import (
     retry_delay,
 )
 from .errors import TransportError
+from .resources.verifications import Verifications
 from .resources.workspace import Workspace
 
 
@@ -62,6 +63,7 @@ class ProofAge:
         self._http = http_client or httpx.Client(timeout=self._config.timeout)
         self._sleep: Callable[[float], None] = time.sleep
         self.workspace = Workspace(self)
+        self.verifications = Verifications(self)
 
     def __repr__(self) -> str:
         return f"ProofAge({self._config!r})"
