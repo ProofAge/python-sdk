@@ -115,7 +115,7 @@ async with AsyncProofAge() as client:
     verification = await client.verifications.create(external_id="candidate-42")
 ```
 
-Configuration, resolved argument → environment variable → default, with the **same names as the Node and Laravel SDKs** so one `.env` serves every language:
+Configuration, resolved argument → environment variable → default. The environment variables have the **same names and the same units as the Laravel and PHP SDKs**, so a `.env` written for them works here unchanged; constructor arguments take Python's natural units (seconds, as floats) and the SDK converts:
 
 | Argument | Environment | Default | Notes |
 |---|---|---|---|
@@ -123,13 +123,15 @@ Configuration, resolved argument → environment variable → default, with the 
 | `secret_key` | `PROOFAGE_SECRET_KEY` | required | Used only to sign; never sent |
 | `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.xyz` | API origin **without** the version; a trailing `/v1` (as in the OpenAPI `servers` entry) is stripped; anything that is not an absolute http(s) URL, or carries a query or fragment, raises at construction |
 | `version` | `PROOFAGE_VERSION` | `v1` | |
-| `timeout` | `PROOFAGE_TIMEOUT` | `30.0` | Seconds per attempt (float, unlike Node's milliseconds, because that is what httpx and every Python HTTP library take) |
+| `timeout` | `PROOFAGE_TIMEOUT` (seconds, as in Laravel) | `30.0` | Seconds, passed to httpx as `httpx.Timeout(timeout)`: a limit on **each operation** (connect, each read, each write, pool), not a deadline for the whole request, so a slowly trickling response can take longer. The README says so. (Node reads this variable in milliseconds; the Laravel/PHP unit is the one followed here, and the README names the clash.) |
 | `retry_attempts` | `PROOFAGE_RETRY_ATTEMPTS` | `3` | Attempts for interactive requests (§5) |
-| `retry_delay` | `PROOFAGE_RETRY_DELAY` | `1.0` | Seconds between attempts when no `Retry-After` is sent |
-| `download_retry_attempts` | — | `1` | Media downloads; only a transport failure is retried, never a status (§5) |
+| `retry_delay` | `PROOFAGE_RETRY_DELAY` (**milliseconds**, as in Laravel and Node) | `1.0` | Seconds between attempts when no `Retry-After` is sent; the environment value is divided by 1000, so a shared `PROOFAGE_RETRY_DELAY=1000` means one second, not a thousand |
+| `download_retry_attempts` | `PROOFAGE_DOWNLOAD_RETRY_ATTEMPTS` | `1` | Media downloads; only a transport failure is retried, never a status (§5) |
 | `http_client` | — | owned | An `httpx.Client` / `httpx.AsyncClient` the caller already manages (proxies, custom TLS). When passed, the SDK never closes it. |
 
 Missing keys raise `ConfigurationError` naming the environment variable to set. Both clients are context managers and have `close()` / `aclose()`.
+
+**The secret key never leaves the object.** `repr()` of `ProofAge`, `AsyncProofAge` and the internal config shows the base URL, version and the api key's first characters, and `secret_key` only as `'***'`; no exception message, event or log line contains it. A test asserts this for `repr`, `str` of every error raised at construction, and the request the transport sends.
 
 Every request identifies the SDK (§3.3).
 
@@ -150,16 +152,16 @@ Method names are Python's (`snake_case`), arguments are keyword-only and typed, 
 | `workspace.consent()` | `GET /consent` | `ConsentInfo` |
 | `verifications.create(*, callback_url=None, external_id=None, external_metadata=None, metadata=None, fingerprint=None, page_url=None)` | `POST /verifications` | `CreatedVerification` (has `url`) |
 | `verifications.get(verification_id)` | `GET /verifications/{id}` | `Verification` |
-| `verifications.accept_consent(verification_id, *, consent_version_id, text_sha256, device=None, ...)` | `POST /verifications/{id}/consent` | `AcceptConsentResult` |
-| `verifications.upload_media(verification_id, *, file, type, side=None, document=None, filename=None, ...)` | `POST /verifications/{id}/media` (multipart) | `None` |
+| `verifications.accept_consent(verification_id, *, consent_version_id, text_sha256, device=None, in_app_browser=None, camera_permission=None, camera_policy_allowed=None, in_iframe=None, referrer=None)` | `POST /verifications/{id}/consent` | `AcceptConsentResult` |
+| `verifications.upload_media(verification_id, *, file, type, side=None, document=None, filename=None, fingerprint=None, head_turn_step=None, capture_resolution=None, device_info=None, liveness_telemetry=None)` | `POST /verifications/{id}/media` (multipart) | `None` |
 | `verifications.submit(verification_id)` | `POST /verifications/{id}/submit` | `None` |
 | `verifications.document(verification_id)` | `GET /verifications/{id}/document` | `VerificationDocument` |
-| `verifications.download_media(verification_id, media_id)` | `GET /verifications/{id}/media/{media}` | context manager yielding a byte iterator (`AsyncIterator[bytes]` on the async client) |
+| `verifications.download_media(verification_id, media_id)` | `GET /verifications/{id}/media/{media}` | context manager yielding a byte iterator (`AsyncIterator[bytes]` on the async client). A transport retry (§5.2) happens only before the first byte is yielded; a failure mid-stream raises `TransportError` |
 | `verifications.download_media_to(verification_id, media_id, path)` | same | `pathlib.Path`; streams to a temporary file and renames only after a 2xx, so a failure never leaves a partial file |
 | `verifications.estimation(verification_id)` | `GET /verifications/{id}/estimation` | `AgeEstimation` |
 | `verifications.block_face(verification_id, *, reason_code=None, reason=None)` | `POST /verifications/{id}/blocked-face` | `None` |
 
-`upload_media(file=...)` accepts `bytes`, a binary file object or a `pathlib.Path`. The full request and response field lists are those of `proofage-node-client/AGENTS.md` and are reproduced in this package's `AGENTS.md`; the contract test (§8) keeps them honest.
+`upload_media(file=...)` accepts `bytes`, a binary file object or a `pathlib.Path`; `filename` defaults to the path's name, else `upload.bin` as in the Node SDK. The full request and response field lists are those of `proofage-node-client/AGENTS.md` and are reproduced in this package's `AGENTS.md`; the contract test (§8) keeps them honest.
 
 ### 3.3 SDK identification
 
@@ -167,7 +169,7 @@ The same contract as every other ProofAge client, so the API and the people read
 
 - **`X-ProofAge-Sdk`** on every request: space-separated `name/version` tokens, outermost wrapper first, the SDK's own `python/{__version__}` always last. A wrapper passing `sdk_tokens=["telegram-bot/1.2.0"]` sends `telegram-bot/1.2.0 python/0.1.0`. Names are lowercase.
 - **`User-Agent`**: `ProofAge-Python/{__version__} (Python {platform.python_version()})`, e.g. `ProofAge-Python/0.1.0 (Python 3.12.7)`. It replaces httpx's default `python-httpx/x`. It is kept as the caller set it when they pass `user_agent`, or when a caller-supplied `http_client` already carries a `User-Agent` other than httpx's default.
-- **The SDK's own token cannot be removed.** A wrapper token named `python` (any case) is dropped, so it can neither replace nor repeat the SDK's own. The header is set per request on every attempt, after any caller hook, so an `http_client` default header or event hook cannot remove it.
+- **The SDK's own token cannot be removed.** A wrapper token named `python` (any case) is dropped, so it can neither replace nor repeat the SDK's own. The header is set on each request the SDK builds, on every attempt, and per-request headers override an `http_client`'s default headers, so a default cannot remove it. An httpx event hook runs inside `send()` after the request is built and could still rewrite it; that is the caller's deliberate choice and the SDK does not fight it.
 - **Validated at construction.** A token must match `^[\x21-\x2E\x30-\x7E]+/[\x21-\x2E\x30-\x7E]+$` (printable ASCII, no space, exactly one slash) and `user_agent` must be printable ASCII (`\x20`–`\x7E`). Anything else raises `ConfigurationError` when the client is built, not on every request after its retries (the lesson the Node SDK learned before 0.7.0).
 - **Not part of the HMAC signature.** Signing stays `METHOD + path + body` (§5.1); the golden vectors do not change.
 - **One version source.** Both headers read `proofage._version.__version__`, the file hatchling already reads (§10), so a release cannot report a stale number.
@@ -181,13 +183,15 @@ All response models derive from one base:
 
 ```python
 class ProofAgeModel(BaseModel):
-    model_config = ConfigDict(extra="allow", populate_by_name=True, frozen=True)
+    model_config = ConfigDict(extra="allow")
 ```
 
+No `frozen=True`: a frozen model advertises itself as hashable, but `hash()` raises on any model holding a dict (`external_metadata`, `duplicate_check`), so immutability would buy a confusing error and nothing else. No `populate_by_name`: the models use the API's own field names, so there are no aliases to serve.
+
 - **Unknown fields are kept** (`extra="allow"`) and readable through `model.model_extra`. A new API field never breaks parsing.
-- **Open enums.** `VerificationStatus`, `BlockFaceReasonCode` and similar are `str, Enum` classes (`StrEnum` is 3.11+ and the floor is 3.10), but every field that holds one is typed `VerificationStatus | str`. A value the SDK does not know yet arrives as the raw string instead of raising. The enum carries the documented set, including `documents_required` (surfaced from the attempt, not a verification status, as `AGENTS.md` in the Node SDK notes).
+- **Open enums.** `VerificationStatus`, `BlockFaceReasonCode` and similar are `str, Enum` classes (`StrEnum` is 3.11+ and the floor is 3.10), but every field that holds one is typed `Annotated[VerificationStatus | str, Field(union_mode="left_to_right")]` (a shared alias per enum). The `union_mode` is essential: in Pydantic's default smart mode a JSON string matches `str` exactly, so the enum would **never** materialise. Left to right, a known value becomes the enum member and a value the SDK does not know yet arrives as the raw string instead of raising. A model test asserts both halves. The enum carries the documented set, including `documents_required` (surfaced from the attempt, not a verification status, as `AGENTS.md` in the Node SDK notes).
 - **`reason` is an open string.** Decline and resubmission reasons are dotted codes from a growing server catalog; they are not modelled as an enum.
-- **Timestamps** parse to aware `datetime`. Nullable fields are `X | None`, and fields the API always sends are required, so `None` means the API sent `null`, not "absent".
+- **Timestamps** parse to aware `datetime`; `date_of_birth` (`YYYY-MM-DD`) parses to `date`. Nullable fields are `X | None`, and fields the API always sends are required, so `None` means the API sent `null`, not "absent".
 - **`model_dump(mode="json")`** gives a plain dict, for logs, JSON storage and handing to an LLM.
 - **Nested shapes** get their own models: `DuplicateCheck`, `Erasure`, `VerificationDocument` / `DocumentFields` / `MediaItem`, `AgeEstimation` / `AgeThreshold` / `Gender`, `WebhookEvent` / `ManualModeration` / `DuplicateOf`.
 
@@ -201,8 +205,10 @@ Both clients share one transport module; only the I/O calls differ. The behaviou
 
 ### 5.1 Signing
 
-- **JSON and body-less requests:** `HMAC-SHA256(secret, METHOD + "/{version}/{path}" + body)`, hex. The body is serialised **once** with `json.dumps(data, separators=(",", ":"), ensure_ascii=False)` (byte-identical to `JSON.stringify` for the payloads the API takes), encoded UTF-8, signed, and sent as those exact bytes via `content=`. An empty payload is the empty string, never `{}`, as in `proofage-node-client/src/hmac.ts:6-11`.
-- **Multipart:** `METHOD/{version}/{path}\n{fields}\n{comma-joined sorted sha256(file) hex}`, where `{fields}` is PHP's `http_build_query(ksort($fields), '', '&', PHP_QUERY_RFC3986)`: keys sorted, values percent-encoded as `rawurlencode` does (`! ' ( ) *` encoded too). Field normalisation before signing **and** sending: `None` dropped, `bool` → `"1"`/`"0"`, numbers → `str`, dicts and lists → compact JSON strings.
+- **JSON and body-less requests:** `HMAC-SHA256(secret, METHOD + "/{version}/{path}" + query + body)`, hex. The server signs the raw bytes it receives (`proofageapp/app/Http/Middleware/VerifyHmacSignature.php`), so the only rule is that the SDK sends exactly what it signed: the body is serialised **once** with `json.dumps(data, separators=(",", ":"), ensure_ascii=False, allow_nan=False)`, encoded UTF-8, signed, and sent as those bytes via `content=`. An empty payload is the empty string, never `{}`, as in `proofage-node-client/src/hmac.ts:6-11`.
+- **Query string.** No `/v1` endpoint takes one today, but the server includes it when present (`?` + Symfony's normalised query: parameters sorted, values RFC 3986-encoded, `%20` for spaces), and a golden vector covers it. The signer implements it as `"?" + "&".join(f"{quote(k, safe='')}={quote(v, safe='')}" for k, v in sorted(parse_qsl(q, keep_blank_values=True)))`, which reproduces the vector.
+- **Headers on every normal request:** `Content-Type: application/json` when there is a JSON body (httpx sets none for `content=`, and Laravel reads a body as JSON only when the header says so) and `Accept: application/json`, so errors come back as JSON rather than HTML. Media downloads send `Accept: application/json, */*;q=0.8`, as the Node SDK does.
+- **Multipart:** `METHOD/{version}/{path}\n{fields}\n{comma-joined sorted sha256(file) hex}`, where `{fields}` is PHP's `http_build_query(ksort($fields), '', '&', PHP_QUERY_RFC3986)`: keys sorted, values percent-encoded as `rawurlencode` does (`! ' ( ) *` encoded too). Field normalisation before signing **and** sending: `None` dropped, `bool` → `"1"`/`"0"`, numbers → `str`, dicts and lists → compact JSON strings. **Only `str` values ever reach httpx's `data=`**: httpx would otherwise encode `True` as `"true"` and `None` as `""`, sending different bytes from the ones signed. The canonical builder itself stays general (nested fields, several files) because the golden vectors exercise both, even though `upload_media` sends one file and JSON-string fields.
 - **Golden vectors are the authority.** `tests/fixtures/hmac-vectors.json` is a verbatim copy of `proofage-php-sdk/resources/hmac-vectors.json` (sections `json`, `multipart`, `webhook`), the file the app also runs through its real `VerifyHmacSignature` middleware. The signing tests are written first and must pass before any resource code (§9).
 
 ### 5.2 Retries
@@ -210,10 +216,10 @@ Both clients share one transport module; only the I/O calls differ. The behaviou
 | Request | Retried on | Never retried on |
 |---|---|---|
 | `GET` | 408, 429, 5xx, timeouts, connection errors | 4xx other than 408/429 |
-| `POST` | 429; connection errors raised **before** the request was sent (DNS failure, connection refused) | 5xx, read timeouts: the server may already have created the verification or stored the upload |
+| `POST` | 429; errors raised **before** the request was sent: `httpx.ConnectError` (DNS failure, connection refused, TLS handshake) and `httpx.ConnectTimeout` | 5xx and every error after sending began: `httpx.WriteError`, `WriteTimeout`, `ReadError`, `ReadTimeout`, `RemoteProtocolError`. The server may already have created the verification or stored the upload |
 | Media download | Transport failures only, up to `download_retry_attempts` | Any HTTP status, 429 included: downloads usually run from a queue whose own backoff owns the wait |
 
-A 429 waits for `Retry-After` when present, otherwise `retry_delay × attempt`. The rule set is the Node SDK's (`AGENTS.md` "Retries") and the PHP SDK's (spec §4.5), so a request behaves the same in every language.
+A 429 waits for `Retry-After` when present (seconds or an HTTP date, as the Node SDK parses both), otherwise `retry_delay × attempt`. The rule set is the Node SDK's (`AGENTS.md` "Retries") and the PHP SDK's (spec §4.5), so a request behaves the same in every language.
 
 ---
 
@@ -243,7 +249,7 @@ The error body is parsed in all four shapes the API sends (`proofageapp` develop
 3. `{"message", "errors"}` (request validation 422): `code` is `None`, `errors` has the fields.
 4. `{"message"}` (403, 404).
 
-A 2xx with an empty body returns `None`. A non-empty 2xx that is not JSON raises `ProofAgeError` whose message says that `base_url` most likely points at a website rather than the API; this is the most common first-run mistake.
+A 2xx with an empty body returns `None` from the methods typed `-> None` (`upload_media`, `submit`, `block_face`); for a method that promises a model, an empty body raises `ProofAgeError` rather than returning `None` against its type. A non-empty 2xx that is not JSON raises `ProofAgeError` whose message says that `base_url` most likely points at a website rather than the API; this is the most common first-run mistake.
 
 ---
 
@@ -257,11 +263,12 @@ from proofage import verify_webhook
 event = verify_webhook(raw_body, headers)          # -> WebhookEvent, or raises WebhookVerificationError
 ```
 
-- `raw_body` is `bytes` exactly as received. `headers` is any case-insensitive mapping.
-- Checks, in order: `X-HMAC-Signature`, `X-Timestamp`, `X-Auth-Client` present; `X-Auth-Client` equals the api key; timestamp within `tolerance` seconds (argument → `PROOFAGE_WEBHOOK_TOLERANCE` → 300); signature equals hex `HMAC-SHA256(secret, f"{timestamp}.{raw_body}")`, compared with `hmac.compare_digest`. If the raw body does not match, the canonical re-serialisation of the JSON is tried once, as the Node SDK does (`src/webhook.ts`).
+- Signature: `verify_webhook(raw_body, headers, *, api_key=None, secret_key=None, tolerance=None)`. Each keyword falls back to `PROOFAGE_API_KEY`, `PROOFAGE_SECRET_KEY` and `PROOFAGE_WEBHOOK_TOLERANCE`. `raw_body` is `bytes` exactly as received; `headers` is any case-insensitive mapping.
+- `CONFIGURATION_ERROR` is raised only **after** the three presence checks, as in the Node SDK (`src/webhook.ts:84`) and the Laravel middleware, so a request missing its headers is reported as such even on a misconfigured server. A timestamp that is not an integer is `MISSING_TIMESTAMP`.
+- Checks, in order: `X-HMAC-Signature`, `X-Timestamp`, `X-Auth-Client` present; `X-Auth-Client` equals the api key; timestamp within `tolerance` seconds (argument → `PROOFAGE_WEBHOOK_TOLERANCE` → 300); signature equals hex `HMAC-SHA256(secret, f"{timestamp}.{raw_body}")`, compared with `hmac.compare_digest`. If the raw body does not match, the canonical re-serialisation of the JSON is tried once, as the Node SDK does (`src/webhook.ts`): `json.dumps(obj, ensure_ascii=False, separators=(",", ":"))`, which reproduces PHP's `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE` output that the vectors' `expected_canonical` holds.
 - `WebhookEvent` exposes `delivery_id` from `X-ProofAge-Webhook-Delivery-Id`: the same on every automatic retry of one delivery, new on a manual resend. The README tells integrators to de-duplicate on it.
 
-### 7.2 Extras (0.1.0)
+### 7.2 Extras (0.1.x)
 
 Each integration is a thin shell over `verify_webhook`: it reads the raw body, turns `WebhookVerificationError` into the framework's 401/400 response, and hands the handler a typed `WebhookEvent`. Importing an integration without its framework installed raises `ImportError` with the exact `pip install "proofage[fastapi]"` line.
 
@@ -323,7 +330,7 @@ The same three layers as the other SDKs (`proofage-node-client/CLAUDE.md` "Chang
 
 1. **Bundled spec.** `src/proofage/openapi.json`, refreshed by `scripts/sync_spec.py` from `proofageapp/developer-docs/public/openapi.json` (the Scramble export).
 2. **`AGENTS.md`** ships in the wheel and is the authoritative response contract where the spec is thin.
-3. **Contract test.** `tests/test_api_contract.py` asserts that every operation in the bundled spec maps to exactly one SDK method, that every request field in the spec is accepted by that method, and that for the operations Scramble fully describes, every response field exists on the model. A new API endpoint therefore fails CI here until the SDK method, the model and `AGENTS.md` land together.
+3. **Contract test.** `tests/test_api_contract.py` asserts that every operation in the bundled spec maps to an SDK method (both `download_media` and `download_media_to` map to the media operation), that every request field in the spec is accepted by that method, and that for the operations Scramble fully describes, every response field exists on the model. A new API endpoint therefore fails CI here until the SDK method, the model and `AGENTS.md` land together.
 
 The maintainer runbook for regenerating the spec stays in one place, `proofageapp/developer-docs/README.md` § "Keeping the SDK clients in sync"; this repo's `CLAUDE.md` links to it and does not duplicate it.
 
@@ -366,7 +373,7 @@ Written in this order, each layer green before the next starts:
 
 3.9 is not supported: it reached end of life in October 2025, so its grace year ends weeks after 0.1.0, and supporting it would mean `Optional[...]` in every model because Pydantic cannot evaluate `X | None` on 3.9.
 
-The extras follow the same idea against their own framework: each supports the oldest framework release that upstream still maintains **and** that runs on the Python floor. Django 4.2 is past that line (its LTS ended in April 2026), so `proofage[django]` needs Django 5.2 LTS (Python 3.10+, supported until April 2028); FastAPI and Flask take their current lines. A floor rises only in a **minor** release, announced a release ahead in `CHANGELOG.md`, never in a patch.
+The extras follow the same idea against their own framework: each supports the oldest framework release that upstream still maintains **and** that runs on the Python floor. Django 4.2 is past that line (its LTS ended in April 2026), so `proofage[django]` needs Django 5.2 LTS (Python 3.10+, supported until April 2028); FastAPI and Flask take their current lines. Django 5.2's classifiers stop at Python 3.13, so on 3.14 the extra resolves Django 6.x; the CI matrix runs the Django extra on 3.14 against 6.x and on the older Pythons against 5.2. A floor rises only in a **minor** release, announced a release ahead in `CHANGELOG.md`, never in a patch.
 
 The same table, with dates, goes in the README under "Supported versions".
 
