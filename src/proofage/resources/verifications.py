@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import os
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from ..models import (
     AcceptConsentResult,
@@ -12,7 +13,7 @@ from ..models import (
     Verification,
     VerificationDocument,
 )
-from ._payloads import compact, verification_path
+from ._payloads import compact, read_upload, upload_fields, verification_path
 
 if TYPE_CHECKING:
     from .._async_client import AsyncProofAge
@@ -106,6 +107,37 @@ class Verifications:
         payload = compact({"reason_code": reason_code, "reason": reason})
         self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
 
+    def upload_media(
+        self,
+        verification_id: str,
+        *,
+        file: bytes | bytearray | os.PathLike[str] | BinaryIO,
+        type: str,
+        side: str | None = None,
+        document: str | None = None,
+        filename: str | None = None,
+        fingerprint: str | None = None,
+        head_turn_step: int | None = None,
+        capture_resolution: str | dict[str, Any] | None = None,
+        device_info: str | dict[str, Any] | None = None,
+        liveness_telemetry: str | list[Any] | None = None,
+    ) -> None:
+        """`POST /verifications/{id}/media` (multipart). Custom capture flows only."""
+        fields = upload_fields(
+            type=type,
+            side=side,
+            document=document,
+            fingerprint=fingerprint,
+            head_turn_step=head_turn_step,
+            capture_resolution=capture_resolution,
+            device_info=device_info,
+            liveness_telemetry=liveness_telemetry,
+        )
+        content, name = read_upload(file, filename)
+        self._client._post_multipart(
+            verification_path(verification_id, "/media"), fields, filename=name, content=content
+        )
+
 
 class AsyncVerifications:
     """Verification sessions: create one, read its outcome, act on it."""
@@ -195,3 +227,37 @@ class AsyncVerifications:
         """`POST /verifications/{id}/blocked-face`. Irreversible for the person."""
         payload = compact({"reason_code": reason_code, "reason": reason})
         await self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
+
+    async def upload_media(
+        self,
+        verification_id: str,
+        *,
+        file: bytes | bytearray | os.PathLike[str] | BinaryIO,
+        type: str,
+        side: str | None = None,
+        document: str | None = None,
+        filename: str | None = None,
+        fingerprint: str | None = None,
+        head_turn_step: int | None = None,
+        capture_resolution: str | dict[str, Any] | None = None,
+        device_info: str | dict[str, Any] | None = None,
+        liveness_telemetry: str | list[Any] | None = None,
+    ) -> None:
+        """`POST /verifications/{id}/media` (multipart). Custom capture flows only.
+
+        The file is read before the request, in the calling thread.
+        """
+        fields = upload_fields(
+            type=type,
+            side=side,
+            document=document,
+            fingerprint=fingerprint,
+            head_turn_step=head_turn_step,
+            capture_resolution=capture_resolution,
+            device_info=device_info,
+            liveness_telemetry=liveness_telemetry,
+        )
+        content, name = read_upload(file, filename)
+        await self._client._post_multipart(
+            verification_path(verification_id, "/media"), fields, filename=name, content=content
+        )
