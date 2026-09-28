@@ -18,7 +18,8 @@ from .errors import (
     ValidationError,
     WebhookVerificationError,
 )
-from .models import BlockFaceReasonCode, VerificationStatus
+from .models import BlockFaceReasonCode, VerificationStatus, WebhookEvent
+from .webhooks import verify_webhook, verify_webhook_signature
 
 __all__ = [
     "AsyncProofAge",
@@ -35,6 +36,9 @@ __all__ = [
     "TransportError",
     "ValidationError",
     "VerificationStatus",
+    "WebhookEvent",
     "WebhookVerificationError",
     "__version__",
+    "verify_webhook",
+    "verify_webhook_signature",
 ]
