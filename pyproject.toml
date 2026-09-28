@@ -31,6 +31,11 @@ dependencies = [
     "pydantic>=2.6,<3",
 ]
 
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.100"]
+django = ["django>=5.2"]
+flask = ["flask>=3.0"]
+
 [project.urls]
 Homepage = "https://proofage.xyz"
 Repository = "https://github.com/ProofAge/python-sdk"
@@ -38,6 +43,10 @@ Changelog = "https://github.com/ProofAge/python-sdk/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
+    "aiogram>=3.10",
+    "django>=5.2",
+    "fastapi>=0.100",
+    "flask>=3.0",
     "mypy>=1.11",
     "packaging>=24",
     "pytest>=8",
@@ -74,3 +83,13 @@ python_version = "3.10"
 strict = true
 files = ["src"]
 plugins = ["pydantic.mypy"]
+
+# Django ships no type information, so its decorators and return values are `Any`.
+[[tool.mypy.overrides]]
+module = ["django.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["proofage.integrations.django"]
+disallow_untyped_decorators = false
+warn_return_any = false
