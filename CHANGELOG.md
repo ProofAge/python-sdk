@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## 0.3.1 — 2026-09-29
+
+- **Deprecated:** the keyword arguments only the ProofAge widget sends: `fingerprint` and `page_url`
+  on `create()`, the browser fields of `accept_consent()` (`device`, `in_app_browser`,
+  `camera_permission`, `camera_policy_allowed`, `in_iframe`, `referrer`), and the capture fields and
+  `type="liveness_selfie"` of `upload_media()`. They are not part of the public API; the API still
+  accepts them, so they keep working and now raise `DeprecationWarning`. They will be removed in a
+  future minor release. `AGENTS.md` documents only the public contract.
+- **Changed:** the bundled `openapi.json` is synced from the published docs, and
+  `scripts/sync_spec.py` reads `https://docs.proofage.xyz/openapi.json` by default.
+
 ## 0.3.0 — 2026-09-28
 
 - **Added:** webhook integrations as extras: `proofage[fastapi]`, `proofage[django]` and
