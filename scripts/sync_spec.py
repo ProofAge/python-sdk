@@ -1,35 +1,41 @@
-"""Copy the app's generated OpenAPI spec into the package.
+"""Copy the published OpenAPI spec into the package.
 
-Source defaults to the sibling app checkout; override with PROOFAGE_OPENAPI_SRC.
-Regenerate it first in the app: `cd developer-docs && npm run generate:openapi`.
+Source defaults to https://docs.proofage.xyz/openapi.json. PROOFAGE_OPENAPI_SRC overrides
+it with another URL or a local file, for example the docs repo's openapi.json before it is
+published (the docs repo regenerates it from the app with scripts/sync_openapi.py).
 """
 
 from __future__ import annotations
 
+import json
 import os
-import shutil
 import sys
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SOURCE = Path(
-    os.environ.get(
-        "PROOFAGE_OPENAPI_SRC",
-        HERE.parent.parent / "proofageapp" / "developer-docs" / "public" / "openapi.json",
-    )
-)
+SOURCE = os.environ.get("PROOFAGE_OPENAPI_SRC", "https://docs.proofage.xyz/openapi.json")
 DESTINATION = HERE.parent / "src" / "proofage" / "openapi.json"
 
 
+def read(source: str) -> str:
+    if source.startswith(("http://", "https://")):
+        with urllib.request.urlopen(source, timeout=30) as response:
+            return response.read().decode("utf-8")
+    path = Path(source)
+    if not path.exists():
+        raise FileNotFoundError(source)
+    return path.read_text(encoding="utf-8")
+
+
 def main() -> int:
-    if not SOURCE.exists():
-        print(f"Source spec not found: {SOURCE}", file=sys.stderr)
-        print(
-            "Run `npm run generate:openapi` in the app, or set PROOFAGE_OPENAPI_SRC.",
-            file=sys.stderr,
-        )
+    try:
+        body = read(SOURCE)
+        json.loads(body)
+    except (OSError, ValueError) as error:
+        print(f"Could not read the spec from {SOURCE}: {error}", file=sys.stderr)
         return 1
-    shutil.copyfile(SOURCE, DESTINATION)
+    DESTINATION.write_text(body, encoding="utf-8")
     print(f"Synced spec: {SOURCE} -> {DESTINATION}")
     return 0
 

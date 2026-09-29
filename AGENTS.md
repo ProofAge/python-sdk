@@ -212,6 +212,5 @@ and `User-Agent: ProofAge-Python/{version} (Python {x.y.z})` unless you pass `us
 ## Keeping this in sync
 
 This contract is drift-tested against `openapi.json` by `tests/test_api_contract.py`, so it stays
-aligned with the API. Maintainers refreshing it after an API change: see the SDK contract-sync
-runbook in the ProofAge app repo (`developer-docs/README.md`, "Keeping the SDK clients in sync"),
-the single source of truth for all SDKs.
+aligned with the API. Maintainers refreshing it after an API change: see the checklist for
+carrying an API change to every client, `.ai/guidelines/api-changes.md` in the ProofAge app repo.
