@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import warnings
 from typing import Any
 
 import pytest
@@ -59,15 +61,16 @@ def test_accept_consent(sdk: Harness, api: respx.MockRouter) -> None:
     route = api.post(f"/verifications/{VID}/consent").respond(
         200, json={"consent_version_id": 3, "consent_accepted_at": "2026-09-28T12:00:00Z"}
     )
-    result = sdk.call(
-        lambda c: c.verifications.accept_consent(
-            VID,
-            consent_version_id=3,
-            text_sha256="ab" * 32,
-            camera_permission="granted",
-            in_iframe=False,
+    with pytest.warns(DeprecationWarning, match="camera_permission, in_iframe"):
+        result = sdk.call(
+            lambda c: c.verifications.accept_consent(
+                VID,
+                consent_version_id=3,
+                text_sha256="ab" * 32,
+                camera_permission="granted",
+                in_iframe=False,
+            )
         )
-    )
     assert isinstance(result, AcceptConsentResult)
     assert body(route) == {
         "consent_version_id": 3,
@@ -139,3 +142,46 @@ def test_a_malformed_id_never_reaches_the_network(api: respx.MockRouter, bad_id:
     ):
         client.verifications.get(bad_id)
     assert not api.calls
+
+
+def test_create_warns_about_the_widget_fields_and_still_sends_them(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").respond(201, json=VERIFICATION)
+    with pytest.warns(
+        DeprecationWarning, match=r"create\(\): page_url is sent by the ProofAge widget"
+    ):
+        sdk.call(lambda c: c.verifications.create(page_url="https://shop.example/checkout"))
+    assert body(route) == {"page_url": "https://shop.example/checkout"}
+
+
+def test_public_fields_raise_no_warning(sdk: Harness, api: respx.MockRouter) -> None:
+    api.post("/verifications").respond(201, json=VERIFICATION)
+    api.post(f"/verifications/{VID}/consent").respond(
+        200, json={"consent_version_id": 3, "consent_accepted_at": "2026-09-28T12:00:00Z"}
+    )
+    api.post(f"/verifications/{VID}/media").respond(200)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        sdk.call(lambda c: c.verifications.create(external_id="candidate-42"))
+        sdk.call(
+            lambda c: c.verifications.accept_consent(
+                VID, consent_version_id=3, text_sha256="ab" * 32
+            )
+        )
+        sdk.call(lambda c: c.verifications.upload_media(VID, file=b"x", type="selfie"))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "named"),
+    [
+        ({"type": "selfie", "head_turn_step": 2}, "head_turn_step"),
+        ({"type": "liveness_selfie"}, "type='liveness_selfie'"),
+    ],
+)
+def test_upload_warns_about_the_widget_fields(
+    sdk: Harness, api: respx.MockRouter, kwargs: dict[str, Any], named: str
+) -> None:
+    api.post(f"/verifications/{VID}/media").respond(200)
+    with pytest.warns(DeprecationWarning, match=re.escape(named)):
+        sdk.call(lambda c: c.verifications.upload_media(VID, file=b"x", **kwargs))

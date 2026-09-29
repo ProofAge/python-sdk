@@ -15,16 +15,17 @@ VID = VERIFICATION_ID
 
 def test_upload_bytes_as_a_document(sdk: Harness, api: respx.MockRouter) -> None:
     route = api.post(f"/verifications/{VID}/media").respond(200)
-    result = sdk.call(
-        lambda c: c.verifications.upload_media(
-            VID,
-            file=b"jpeg",
-            type="document",
-            side="front",
-            document="passport",
-            device_info={"os": "iOS"},
+    with pytest.warns(DeprecationWarning, match="device_info"):
+        result = sdk.call(
+            lambda c: c.verifications.upload_media(
+                VID,
+                file=b"jpeg",
+                type="document",
+                side="front",
+                document="passport",
+                device_info={"os": "iOS"},
+            )
         )
-    )
     assert result is None
     content = route.calls.last.request.content
     assert b'filename="upload.bin"' in content

@@ -20,7 +20,14 @@ from ..models import (
     Verification,
     VerificationDocument,
 )
-from ._payloads import compact, path_segment, read_upload, upload_fields, verification_path
+from ._payloads import (
+    compact,
+    path_segment,
+    read_upload,
+    upload_fields,
+    verification_path,
+    warn_widget_fields,
+)
 
 if TYPE_CHECKING:
     from .._async_client import AsyncProofAge
@@ -51,7 +58,11 @@ class Verifications:
         fingerprint: str | None = None,
         page_url: str | None = None,
     ) -> CreatedVerification:
-        """`POST /verifications`. Send the person to the returned `url`."""
+        """`POST /verifications`. Send the person to the returned `url`.
+
+        `fingerprint` and `page_url` are deprecated: the ProofAge widget sends them.
+        """
+        warn_widget_fields("create", {"fingerprint": fingerprint, "page_url": page_url})
         payload = compact(
             {
                 "callback_url": callback_url,
@@ -81,7 +92,21 @@ class Verifications:
         in_iframe: bool | None = None,
         referrer: str | None = None,
     ) -> AcceptConsentResult:
-        """`POST /verifications/{id}/consent`. Custom capture flows only."""
+        """`POST /verifications/{id}/consent`. Custom capture flows only.
+
+        Everything after `text_sha256` is deprecated: the ProofAge widget sends it.
+        """
+        warn_widget_fields(
+            "accept_consent",
+            {
+                "device": device,
+                "in_app_browser": in_app_browser,
+                "camera_permission": camera_permission,
+                "camera_policy_allowed": camera_policy_allowed,
+                "in_iframe": in_iframe,
+                "referrer": referrer,
+            },
+        )
         payload = compact(
             {
                 "consent_version_id": consent_version_id,
@@ -140,7 +165,22 @@ class Verifications:
         device_info: str | dict[str, Any] | None = None,
         liveness_telemetry: str | list[Any] | None = None,
     ) -> None:
-        """`POST /verifications/{id}/media` (multipart). Custom capture flows only."""
+        """`POST /verifications/{id}/media` (multipart). Custom capture flows only.
+
+        `type="liveness_selfie"` and the arguments after `filename` are deprecated: the ProofAge
+        widget sends them. Upload a person's selfie as `type="selfie"`.
+        """
+        warn_widget_fields(
+            "upload_media",
+            {
+                "type='liveness_selfie'": True if type == "liveness_selfie" else None,
+                "fingerprint": fingerprint,
+                "head_turn_step": head_turn_step,
+                "capture_resolution": capture_resolution,
+                "device_info": device_info,
+                "liveness_telemetry": liveness_telemetry,
+            },
+        )
         fields = upload_fields(
             type=type,
             side=side,
@@ -209,7 +249,11 @@ class AsyncVerifications:
         fingerprint: str | None = None,
         page_url: str | None = None,
     ) -> CreatedVerification:
-        """`POST /verifications`. Send the person to the returned `url`."""
+        """`POST /verifications`. Send the person to the returned `url`.
+
+        `fingerprint` and `page_url` are deprecated: the ProofAge widget sends them.
+        """
+        warn_widget_fields("create", {"fingerprint": fingerprint, "page_url": page_url})
         payload = compact(
             {
                 "callback_url": callback_url,
@@ -239,7 +283,21 @@ class AsyncVerifications:
         in_iframe: bool | None = None,
         referrer: str | None = None,
     ) -> AcceptConsentResult:
-        """`POST /verifications/{id}/consent`. Custom capture flows only."""
+        """`POST /verifications/{id}/consent`. Custom capture flows only.
+
+        Everything after `text_sha256` is deprecated: the ProofAge widget sends it.
+        """
+        warn_widget_fields(
+            "accept_consent",
+            {
+                "device": device,
+                "in_app_browser": in_app_browser,
+                "camera_permission": camera_permission,
+                "camera_policy_allowed": camera_policy_allowed,
+                "in_iframe": in_iframe,
+                "referrer": referrer,
+            },
+        )
         payload = compact(
             {
                 "consent_version_id": consent_version_id,
@@ -301,7 +359,20 @@ class AsyncVerifications:
         """`POST /verifications/{id}/media` (multipart). Custom capture flows only.
 
         The file is read before the request, in the calling thread.
+        `type="liveness_selfie"` and the arguments after `filename` are deprecated: the ProofAge
+        widget sends them. Upload a person's selfie as `type="selfie"`.
         """
+        warn_widget_fields(
+            "upload_media",
+            {
+                "type='liveness_selfie'": True if type == "liveness_selfie" else None,
+                "fingerprint": fingerprint,
+                "head_turn_step": head_turn_step,
+                "capture_resolution": capture_resolution,
+                "device_info": device_info,
+                "liveness_telemetry": liveness_telemetry,
+            },
+        )
         fields = upload_fields(
             type=type,
             side=side,

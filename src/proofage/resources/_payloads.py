@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import warnings
 from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
@@ -84,3 +85,18 @@ def upload_fields(
         "device_info": device_info,
         "liveness_telemetry": liveness_telemetry,
     }
+
+
+def warn_widget_fields(method: str, values: dict[str, Any]) -> None:
+    """Warn about arguments only the ProofAge widget sends: the API accepts them, but they are not
+    part of its public contract and will leave these signatures in a future minor release."""
+    passed = [name for name, value in values.items() if value is not None]
+    if not passed:
+        return
+    verb = "is" if len(passed) == 1 else "are"
+    warnings.warn(
+        f"{method}(): {', '.join(passed)} {verb} sent by the ProofAge widget, not part of the "
+        "public API, and will be removed in a future minor release.",
+        DeprecationWarning,
+        stacklevel=3,
+    )

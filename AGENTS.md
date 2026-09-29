@@ -88,6 +88,8 @@ GET /v1/..."), naming the fields but never their values.
 
 ## Endpoints
 
+Keyword arguments the ProofAge widget sends (`fingerprint`, `page_url`, the browser fields of `accept_consent`, the capture fields and `type="liveness_selfie"` of `upload_media`) are deprecated: they still work, raise `DeprecationWarning`, and are not part of this contract.
+
 ### GET /workspace — `client.workspace.get()` → `WorkspaceInfo`
 Request: none.
 Response: `{ id: str, name: str, flow_type: str, mode: str, age_mode: str|None, age_threshold: int|None, verification_type: str, redirect_url: str|None, webhook_url: str|None, allow_expired_documents: bool, allow_duplicate_accounts: bool }`
@@ -97,7 +99,7 @@ Request: none.
 Response: `{ id: int, version: int, text_sha256: str, url: str }` (`version` is informational: accept consent with `id` and `text_sha256`)
 
 ### POST /verifications — `client.verifications.create(**kwargs)` → `CreatedVerification`
-Request (all optional keywords): `fingerprint: str(64), callback_url: url(<=2048), external_id: str(<=255), external_metadata: dict, metadata: dict, page_url: str(<=8192)` (`page_url`: the page the verification was started on; only scheme, host and path are kept).
+Request (all optional keywords): `callback_url: url(<=2048), external_id: str(<=255), external_metadata: dict, metadata: dict`.
 Response (`201`): `{ id, external_id, external_metadata, redirect_url, status, reason, duplicate_check: DuplicateCheck, erasure: Erasure|None, consent_accepted_at, created_at, updated_at, url }` — `url` is the hosted session the person opens.
 Errors: `402` `PaymentRequiredError`; `422` `ValidationError`.
 
@@ -109,11 +111,11 @@ Request: none.
 Response: same as create **without** `url`.
 
 ### POST /verifications/{verification}/consent — `client.verifications.accept_consent(verification_id, *, consent_version_id, text_sha256, ...)` → `AcceptConsentResult`
-Request: `consent_version_id: int, text_sha256: str(64 hex)`, optional `device: { platform, screen, language, timezone, hardware_concurrency, device_memory }, in_app_browser: str|None, camera_permission: "granted"|"denied"|"prompt"|"unsupported"|None, camera_policy_allowed: bool|None, in_iframe: bool|None, referrer: str|None`. `consent_version_id` / `text_sha256` are `id` / `text_sha256` from `workspace.consent()`. Custom capture flows only.
+Request: `consent_version_id: int, text_sha256: str(64 hex)`. `consent_version_id` / `text_sha256` are `id` / `text_sha256` from `workspace.consent()`. Custom capture flows only.
 Response: `{ consent_version_id: int, consent_accepted_at: datetime }`
 
 ### POST /verifications/{verification}/media — `client.verifications.upload_media(verification_id, *, file, type, ...)` → `None`
-Request (multipart): `file: bytes | pathlib.Path | binary file object (image, <=10 MB; documents >=200px per edge)`, `type: "selfie"|"liveness_selfie"|"document"`, `side: "front"|"back"` and `document: "id"|"driver_license"|"passport"|"residence_permit"` (both required when `type="document"`), optional `filename` (default: the path's name, else `upload.bin`), `fingerprint: str(64), head_turn_step: int(0..10), capture_resolution: str|dict, device_info: str|dict, liveness_telemetry: str|list`. Dicts and lists are sent as JSON strings. A text-mode file raises `TypeError`; an invalid `type`/`side`/`document` combination raises `ValueError`, both before any request. Requires consent accepted first.
+Request (multipart): `file: bytes | pathlib.Path | binary file object (image, <=10 MB; documents >=200px per edge)`, `type: "selfie"|"document"`, `side: "front"|"back"` and `document: "id"|"driver_license"|"passport"|"residence_permit"` (both required when `type="document"`), optional `filename` (default: the path's name, else `upload.bin`). A text-mode file raises `TypeError`; an invalid `type`/`side`/`document` combination raises `ValueError`, both before any request. Requires consent accepted first.
 Response: `200` with an **empty body**; returns `None`.
 Errors: `422` `ValidationError` with `.code` when the image is rejected (e.g. `FACE_NOT_FOUND`) or `.errors` for invalid fields; `500` `ServerError` `VALIDATION_SERVICE_UNAVAILABLE`.
 
