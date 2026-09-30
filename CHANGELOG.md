@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.4.0 — 2026-09-30
 
 - **Added:** `verifications.document()` returns `document.type` and `document.issuing_country` on
   every workspace, and on identity (KYC) workspaces six more `DocumentFields`: `middle_name`,
