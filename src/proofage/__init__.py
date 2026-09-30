@@ -18,7 +18,13 @@ from .errors import (
     ValidationError,
     WebhookVerificationError,
 )
-from .models import BlockFaceReasonCode, VerificationStatus, WebhookEvent
+from .models import (
+    BlockFaceReasonCode,
+    DocumentGender,
+    DocumentResultType,
+    VerificationStatus,
+    WebhookEvent,
+)
 from .webhooks import verify_webhook, verify_webhook_signature
 
 __all__ = [
@@ -26,6 +32,8 @@ __all__ = [
     "AuthenticationError",
     "BlockFaceReasonCode",
     "ConfigurationError",
+    "DocumentGender",
+    "DocumentResultType",
     "NotFoundError",
     "PaymentRequiredError",
     "PermissionDeniedError",

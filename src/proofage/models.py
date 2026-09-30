@@ -126,15 +126,56 @@ class AcceptConsentResult(ProofAgeModel):
     consent_accepted_at: datetime
 
 
+class DocumentResultType(_ApiEnum):
+    """The document types a result reports. `other` is declared and not yet produced."""
+
+    PASSPORT = "passport"
+    ID = "id"
+    DRIVER_LICENSE = "driver_license"
+    RESIDENCE_PERMIT = "residence_permit"
+    OTHER = "other"
+
+
+DocumentKind = Annotated[DocumentResultType | str, Field(union_mode="left_to_right")]
+"""A known document type as the enum member, an unknown one as the raw string."""
+
+
+class DocumentGender(_ApiEnum):
+    """The sex a document states. `X` (unspecified) is declared and not yet produced."""
+
+    F = "F"
+    M = "M"
+    X = "X"
+
+
+DocumentSex = Annotated[DocumentGender | str, Field(union_mode="left_to_right")]
+"""A known value as the enum member, an unknown one as the raw string."""
+
+
 class DocumentFields(ProofAgeModel):
+    """Identity (KYC) workspaces receive all ten fields; age workspaces only the first four
+    listed here as required. The six KYC-only keys are absent there, so they default to None."""
+
     first_name: str | None
     last_name: str | None
     date_of_birth: date | None
     document_number: str | None
+    middle_name: str | None = None
+    gender: DocumentSex | None = None
+    nationality: str | None = None
+    """ISO 3166-1 alpha-2 (`XK` for Kosovo); can differ from `issuing_country`."""
+    place_of_birth: str | None = None
+    """The printed text, not normalised."""
+    issue_date: date | None = None
+    expiry_date: date | None = None
+    """A month or year of expiry is reported as the last day of that period."""
 
 
 class Document(ProofAgeModel):
     fields: DocumentFields
+    type: DocumentKind | None = None
+    issuing_country: str | None = None
+    """ISO 3166-1 alpha-2 (`XK` for Kosovo)."""
 
 
 class MediaItem(ProofAgeModel):

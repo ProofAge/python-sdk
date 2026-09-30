@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `verifications.document()` returns `document.type` and `document.issuing_country` on
+  every workspace, and on identity (KYC) workspaces six more `DocumentFields`: `middle_name`,
+  `gender`, `nationality`, `place_of_birth`, `issue_date` and `expiry_date`. All default to `None`,
+  so an older API body and an age-workspace body (where the six keys are absent) still parse.
+  `type` and `gender` are open enums (`DocumentResultType`, `DocumentGender`): an unknown value
+  arrives as a plain string.
+
 ## 0.3.1 — 2026-09-29
 
 - **Deprecated:** the keyword arguments only the ProofAge widget sends: `fingerprint` and `page_url`
