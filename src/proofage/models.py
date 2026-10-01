@@ -247,6 +247,9 @@ class WebhookEvent(ProofAgeModel):
     external_metadata: dict[str, Any] | None
     reason: str | None
     timestamp: datetime
+    document: Document | None = None
+    """The object `verifications.document()` returns, without media, on every decision webhook.
+    None on a body sent before it existed; the seven KYC-only keys are absent on age workspaces."""
     duplicate_detected: bool = False
     duplicate_count: int | None = None
     duplicate_of: DuplicateOf | None = None

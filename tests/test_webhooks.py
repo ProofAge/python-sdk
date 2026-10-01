@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,7 @@ import pytest
 
 from proofage import WebhookVerificationError, verify_webhook, verify_webhook_signature
 from proofage._signing import webhook_signature
-from proofage.models import VerificationStatus
+from proofage.models import DocumentResultType, VerificationStatus
 
 from .conftest import API_KEY, SECRET_KEY
 
@@ -49,6 +50,77 @@ def test_a_valid_webhook_becomes_an_event() -> None:
     assert event.verification_id == "v-1"
     assert event.status is VerificationStatus.APPROVED
     assert event.delivery_id == "d-1"
+
+
+def _signed(payload: dict[str, Any]) -> bytes:
+    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+_BASE = {
+    "verification_id": "v-1",
+    "status": "approved",
+    "external_id": "u-1",
+    "external_metadata": None,
+    "reason": None,
+    "timestamp": "2026-09-02T09:00:00+00:00",
+}
+
+
+def test_a_kyc_webhook_carries_a_typed_document() -> None:
+    body = _signed(
+        {
+            **_BASE,
+            "document": {
+                "type": "passport",
+                "issuing_country": "DE",
+                "fields": {
+                    "first_name": "ÉLODIE",
+                    "middle_name": None,
+                    "last_name": "DOE",
+                    "date_of_birth": "1990-04-12",
+                    "gender": "F",
+                    "nationality": None,
+                    "place_of_birth": "BERLIN",
+                    "address": "1 Main St\n10115 BERLIN",
+                    "document_number": "X1234567",
+                    "issue_date": None,
+                    "expiry_date": "2030-04-30",
+                },
+            },
+        }
+    )
+    document = verify(body).document
+    assert document is not None
+    assert document.type is DocumentResultType.PASSPORT
+    assert document.fields.first_name == "ÉLODIE"
+    assert document.fields.address == "1 Main St\n10115 BERLIN"
+    assert document.fields.expiry_date == date(2030, 4, 30)
+
+
+def test_an_age_webhook_and_an_unknown_type_parse() -> None:
+    body = _signed(
+        {
+            **_BASE,
+            "document": {
+                "type": "health_card",
+                "issuing_country": None,
+                "fields": {
+                    "first_name": None,
+                    "last_name": None,
+                    "date_of_birth": None,
+                    "document_number": None,
+                },
+            },
+        }
+    )
+    document = verify(body).document
+    assert document is not None
+    assert document.type == "health_card"
+    assert document.fields.gender is None and document.fields.address is None
+
+
+def test_a_webhook_without_a_document_has_none() -> None:
+    assert verify().document is None
 
 
 def test_headers_are_case_insensitive() -> None:

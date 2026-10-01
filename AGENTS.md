@@ -178,6 +178,7 @@ except WebhookVerificationError as error:
   "external_metadata": dict|None,
   "reason": str|None,                          # a code only on resubmission_requested / declined
   "timestamp": datetime,
+  "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed
   "duplicate_detected": bool (default False),  # the three duplicate_* keys appear together
   "duplicate_count": int|None,
   "duplicate_of": { "verification_id": str, "external_id": str|None }|None,

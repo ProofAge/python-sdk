@@ -10,6 +10,9 @@ release may change the API and a patch release never does.
   trimmed, `None` when empty, not parsed and possibly several lines. It defaults to `None`, so an
   age-workspace body (where the key is absent) still parses. `DocumentGender.X` now means the
   document states that the sex is unspecified.
+- **Added:** `WebhookEvent.document`, the `Document` model `verifications.document()` returns, on
+  every decision webhook (no media). It defaults to `None`, so a body sent before it existed, or one
+  from a retry after erasure, still parses; the FastAPI, Django and Flask integrations hand it on.
 
 ## 0.4.0 — 2026-09-30
 
