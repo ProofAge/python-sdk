@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `DocumentFields.address` on identity (KYC) workspaces: the printed text as read,
+  trimmed, `None` when empty, not parsed and possibly several lines. It defaults to `None`, so an
+  age-workspace body (where the key is absent) still parses. `DocumentGender.X` now means the
+  document states that the sex is unspecified.
+
 ## 0.4.0 — 2026-09-30
 
 - **Added:** `verifications.document()` returns `document.type` and `document.issuing_country` on

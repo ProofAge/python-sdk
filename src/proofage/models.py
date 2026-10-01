@@ -141,7 +141,7 @@ DocumentKind = Annotated[DocumentResultType | str, Field(union_mode="left_to_rig
 
 
 class DocumentGender(_ApiEnum):
-    """The sex a document states. `X` (unspecified) is declared and not yet produced."""
+    """The sex a document states. `X` means the document states that the sex is unspecified."""
 
     F = "F"
     M = "M"
@@ -153,8 +153,8 @@ DocumentSex = Annotated[DocumentGender | str, Field(union_mode="left_to_right")]
 
 
 class DocumentFields(ProofAgeModel):
-    """Identity (KYC) workspaces receive all ten fields; age workspaces only the first four
-    listed here as required. The six KYC-only keys are absent there, so they default to None."""
+    """Identity (KYC) workspaces receive all eleven fields; age workspaces only the first four
+    listed here as required. The seven KYC-only keys are absent there, so they default to None."""
 
     first_name: str | None
     last_name: str | None
@@ -166,6 +166,8 @@ class DocumentFields(ProofAgeModel):
     """ISO 3166-1 alpha-2 (`XK` for Kosovo); can differ from `issuing_country`."""
     place_of_birth: str | None = None
     """The printed text, not normalised."""
+    address: str | None = None
+    """The printed text as read: trimmed, not parsed, and possibly several lines."""
     issue_date: date | None = None
     expiry_date: date | None = None
     """A month or year of expiry is reported as the last day of that period."""

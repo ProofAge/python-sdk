@@ -110,7 +110,7 @@ def test_document(sdk: Harness, api: respx.MockRouter) -> None:
     assert document.meta.attempt_id == "a1"
 
 
-def test_document_kyc_body_parses_all_ten_fields(sdk: Harness, api: respx.MockRouter) -> None:
+def test_document_kyc_body_parses_all_eleven_fields(sdk: Harness, api: respx.MockRouter) -> None:
     api.get(f"/verifications/{VID}/document").respond(
         200,
         json={
@@ -125,6 +125,7 @@ def test_document_kyc_body_parses_all_ten_fields(sdk: Harness, api: respx.MockRo
                     "gender": "F",
                     "nationality": "DE",
                     "place_of_birth": "BERLIN",
+                    "address": "Rua das Flores 12\n1000-001 LISBOA",
                     "document_number": "X1234567",
                     "issue_date": "2020-04-14",
                     "expiry_date": "2030-04-30",
@@ -140,6 +141,7 @@ def test_document_kyc_body_parses_all_ten_fields(sdk: Harness, api: respx.MockRo
     assert document.document.fields.gender is DocumentGender.F
     assert document.document.fields.expiry_date == date(2030, 4, 30)
     assert document.document.fields.middle_name is None
+    assert document.document.fields.address == "Rua das Flores 12\n1000-001 LISBOA"
 
 
 def test_document_age_body_leaves_the_kyc_only_keys_unset(
@@ -166,6 +168,7 @@ def test_document_age_body_leaves_the_kyc_only_keys_unset(
     fields = document.document.fields
     assert fields.date_of_birth is None
     assert fields.gender is None and fields.expiry_date is None and fields.nationality is None
+    assert fields.address is None
 
 
 def test_document_unknown_type_and_gender_arrive_as_strings(
