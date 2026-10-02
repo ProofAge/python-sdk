@@ -127,7 +127,7 @@ class AcceptConsentResult(ProofAgeModel):
 
 
 class DocumentResultType(_ApiEnum):
-    """The document types a result reports. `other` is declared and not yet produced."""
+    """The document types a result reports. `other` is a readable document that is not an identity card, passport, driving licence or residence permit, such as a health insurance card."""
 
     PASSPORT = "passport"
     ID = "id"
