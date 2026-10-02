@@ -72,7 +72,8 @@ def test_a_kyc_webhook_carries_a_typed_document() -> None:
             **_BASE,
             "document": {
                 "type": "passport",
-                "issuing_country": "DE",
+                "issuing_country": "US",
+                "issuing_subdivision": "FL",
                 "fields": {
                     "first_name": "ÉLODIE",
                     "middle_name": None,
@@ -92,6 +93,7 @@ def test_a_kyc_webhook_carries_a_typed_document() -> None:
     document = verify(body).document
     assert document is not None
     assert document.type is DocumentResultType.PASSPORT
+    assert document.issuing_subdivision == "FL"
     assert document.fields.first_name == "ÉLODIE"
     assert document.fields.address == "1 Main St\n10115 BERLIN"
     assert document.fields.expiry_date == date(2030, 4, 30)

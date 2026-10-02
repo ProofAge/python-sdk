@@ -117,6 +117,7 @@ def test_document_kyc_body_parses_all_eleven_fields(sdk: Harness, api: respx.Moc
             "document": {
                 "type": "passport",
                 "issuing_country": "DE",
+                "issuing_subdivision": None,
                 "fields": {
                     "first_name": "JANE",
                     "middle_name": None,
@@ -138,6 +139,7 @@ def test_document_kyc_body_parses_all_eleven_fields(sdk: Harness, api: respx.Moc
     document = sdk.call(lambda c: c.verifications.document(VID))
     assert document.document.type is DocumentResultType.PASSPORT
     assert document.document.issuing_country == "DE"
+    assert document.document.issuing_subdivision is None
     assert document.document.fields.gender is DocumentGender.F
     assert document.document.fields.expiry_date == date(2030, 4, 30)
     assert document.document.fields.middle_name is None
@@ -151,8 +153,9 @@ def test_document_age_body_leaves_the_kyc_only_keys_unset(
         200,
         json={
             "document": {
-                "type": "id",
-                "issuing_country": "FR",
+                "type": "driver_license",
+                "issuing_country": "US",
+                "issuing_subdivision": "CA",
                 "fields": {
                     "first_name": "JEAN",
                     "last_name": "MARTIN",
@@ -165,6 +168,7 @@ def test_document_age_body_leaves_the_kyc_only_keys_unset(
         },
     )
     document = sdk.call(lambda c: c.verifications.document(VID))
+    assert document.document.issuing_subdivision == "CA"
     fields = document.document.fields
     assert fields.date_of_birth is None
     assert fields.gender is None and fields.expiry_date is None and fields.nationality is None

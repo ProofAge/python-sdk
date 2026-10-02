@@ -178,6 +178,9 @@ class Document(ProofAgeModel):
     type: DocumentKind | None = None
     issuing_country: str | None = None
     """ISO 3166-1 alpha-2 (`XK` for Kosovo)."""
+    issuing_subdivision: str | None = None
+    """The state or province of issuance as a bare code (`FL` with `US`), or None; filled today
+    for US driving licences and ID cards, and None when `issuing_country` is."""
 
 
 class MediaItem(ProofAgeModel):

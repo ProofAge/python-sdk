@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `Document.issuing_subdivision`, the state or province of issuance as a bare code
+  (`FL` with `US`), or `None`; filled today for US driving licences and ID cards. It defaults to
+  `None`, so an older body still parses, and it also arrives on `WebhookEvent.document`.
+
 ## 0.5.0 — 2026-10-01
 
 - **Added:** `DocumentFields.address` on identity (KYC) workspaces: the printed text as read,
