@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.6.0 — 2026-10-02
 
 - **Added:** `Document.issuing_subdivision`, the state or province of issuance as a bare code
   (`FL` with `US`), or `None`; filled today for US driving licences and ID cards. It defaults to
