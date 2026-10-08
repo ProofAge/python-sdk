@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.7.0 — 2026-10-08
 
 - **Added:** `WebhookEvent.event` (`WebhookEventType.STATUS_UPDATED` or `DATA_UPDATED`, an unknown
   value as a plain string) and `WebhookEvent.changed_fields`. `data.updated` is sent when a tenant
