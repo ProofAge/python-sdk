@@ -18,9 +18,18 @@ from proofage.models import (
     CreatedVerification,
     Verification,
     VerificationDocument,
+    VerificationList,
+    VerificationOutcome,
+    VerificationStatus,
+    WebhookSubscription,
+    WebhookSubscriptionList,
     WorkspaceInfo,
 )
 from proofage.resources.verifications import AsyncVerifications, Verifications
+from proofage.resources.webhook_subscriptions import (
+    AsyncWebhookSubscriptions,
+    WebhookSubscriptions,
+)
 from proofage.resources.workspace import AsyncWorkspace, Workspace
 
 SPEC: dict[str, Any] = json.loads(
@@ -36,6 +45,7 @@ class Operation:
     request: tuple[str, ...]
     model: type[BaseModel] | None
     response_status: str | None = None
+    query: tuple[str, ...] = ()
 
 
 OPERATIONS: dict[str, Operation] = {
@@ -47,6 +57,13 @@ OPERATIONS: dict[str, Operation] = {
         ("callback_url", "external_id", "external_metadata", "metadata"),
         CreatedVerification,
         "201",
+    ),
+    "verifications.list": Operation(
+        "GET",
+        "/verifications",
+        (),
+        VerificationList,
+        query=("status", "external_id", "limit", "cursor"),
     ),
     "verifications.get": Operation("GET", "/verifications/{verification}", (), Verification),
     "verifications.accept_consent": Operation(
@@ -77,10 +94,34 @@ OPERATIONS: dict[str, Operation] = {
     "verifications.block_face": Operation(
         "POST", "/verifications/{verification}/blocked-face", ("reason", "reason_code"), None
     ),
+    "verifications.set_test_outcome": Operation(
+        "POST", "/verifications/{verification}/test-outcome", ("status", "reason"), Verification
+    ),
+    "webhook_subscriptions.create": Operation(
+        "POST",
+        "/webhook-subscriptions",
+        ("url", "statuses", "include_document_data"),
+        WebhookSubscription,
+        "201",
+    ),
+    "webhook_subscriptions.list": Operation(
+        "GET", "/webhook-subscriptions", (), WebhookSubscriptionList
+    ),
+    "webhook_subscriptions.delete": Operation(
+        "DELETE", "/webhook-subscriptions/{subscription}", (), None
+    ),
 }
 
-SYNC = {"workspace": Workspace, "verifications": Verifications}
-ASYNC = {"workspace": AsyncWorkspace, "verifications": AsyncVerifications}
+SYNC = {
+    "workspace": Workspace,
+    "verifications": Verifications,
+    "webhook_subscriptions": WebhookSubscriptions,
+}
+ASYNC = {
+    "workspace": AsyncWorkspace,
+    "verifications": AsyncVerifications,
+    "webhook_subscriptions": AsyncWebhookSubscriptions,
+}
 
 
 def schema_properties(schema: Any) -> list[str]:
@@ -142,6 +183,19 @@ def test_request_fields_match_the_spec(name: str) -> None:
     assert set(op.request) <= set(parameters), f"{name} is missing a request field"
 
 
+def query_parameters(op: Operation) -> list[str]:
+    parameters = SPEC["paths"][op.path][op.method.lower()].get("parameters", [])
+    return sorted(p["name"] for p in parameters if p.get("in") == "query")
+
+
+@pytest.mark.parametrize("name", list(OPERATIONS))
+def test_query_parameters_match_the_spec(name: str) -> None:
+    op = OPERATIONS[name]
+    assert query_parameters(op) == sorted(op.query)
+    parameters = inspect.signature(method(name, SYNC)).parameters
+    assert set(op.query) <= set(parameters), f"{name} is missing a query parameter"
+
+
 @pytest.mark.parametrize("name", list(OPERATIONS))
 def test_sync_and_async_surfaces_match(name: str) -> None:
     sync_params = list(inspect.signature(method(name, SYNC)).parameters)
@@ -163,6 +217,10 @@ def test_response_models_match_the_spec_where_it_describes_them() -> None:
         "verifications.document",
         "verifications.estimation",
         "verifications.get",
+        "verifications.list",
+        "verifications.set_test_outcome",
+        "webhook_subscriptions.create",
+        "webhook_subscriptions.list",
         "workspace.consent",
         "workspace.get",
     ]
@@ -179,7 +237,8 @@ def test_calls_resolving_to_none_have_no_json_body() -> None:
 
 def test_agents_md_documents_every_endpoint() -> None:
     for op in OPERATIONS.values():
-        assert f"{op.method} {op.path}" in AGENTS, f"AGENTS.md is missing {op.method} {op.path}"
+        heading = f"### {op.method} {op.path} "
+        assert heading in AGENTS, f"AGENTS.md has no section for {op.method} {op.path}"
 
 
 def test_reason_codes_match_the_api() -> None:
@@ -203,3 +262,29 @@ def test_reason_codes_match_the_api() -> None:
         return None
 
     assert sorted(find_enum(schema) or []) == sorted(code.value for code in BlockFaceReasonCode)
+
+
+def request_enum(path: str, method_name: str, field: str) -> list[str]:
+    body = SPEC["paths"][path][method_name]["requestBody"]["content"]["application/json"]
+    name = body["schema"]["$ref"].rsplit("/", 1)[-1]
+    schema = SPEC["components"]["schemas"][name]["properties"][field]
+    return sorted(schema.get("items", schema)["enum"])
+
+
+def test_test_outcomes_match_the_api() -> None:
+    enum = request_enum("/verifications/{verification}/test-outcome", "post", "status")
+    assert enum == sorted(outcome.value for outcome in VerificationOutcome)
+
+
+def test_subscription_statuses_are_verification_statuses() -> None:
+    enum = request_enum("/webhook-subscriptions", "post", "statuses")
+    assert set(enum) <= {status.value for status in VerificationStatus}
+
+
+def test_list_status_filter_names_only_known_statuses() -> None:
+    parameter = next(
+        p for p in SPEC["paths"]["/verifications"]["get"]["parameters"] if p["name"] == "status"
+    )
+    for status in VerificationStatus:
+        if status is not VerificationStatus.DOCUMENTS_REQUIRED:
+            assert f"`{status.value}`" in parameter["description"]

@@ -1,7 +1,8 @@
 # ProofAge Python SDK — API contract for agents
 
-This package wraps the ProofAge v1 HTTP API. Methods live on `client.workspace` and
-`client.verifications`; `AsyncProofAge` has the same methods, awaited. Responses are Pydantic
+This package wraps the ProofAge v1 HTTP API. Methods live on `client.workspace`,
+`client.verifications` and `client.webhook_subscriptions`; `AsyncProofAge` has the same methods,
+awaited. Responses are Pydantic
 models from `proofage.models`, and they are lenient: a field the SDK does not know yet is kept in
 `model.model_extra`, and a status the SDK does not know yet arrives as a plain `str` instead of a
 `VerificationStatus` member (compare with `==`, not `is`). `model.model_dump(mode="json")` gives a
@@ -10,7 +11,8 @@ endpoints and request bodies; where it does not describe a response, the shapes 
 authoritative).
 
 All requests send `X-API-Key` and `X-HMAC-Signature`. Request bodies use **snake_case** to match
-the API. Responses are never wrapped in `data`.
+the API. A single object is never wrapped in `data`; the two list endpoints answer
+`{ data: [...] }` (plus `next_cursor` on `GET /verifications`), and their models keep that shape.
 
 ## Configuration
 
@@ -41,9 +43,9 @@ raw `response_body`:
 ProofAgeError
 ├── AuthenticationError     401
 ├── PaymentRequiredError    402  code PAYMENT_METHOD_REQUIRED; error_data has free_verifications_remaining, trial_ends_at, trial_active
-├── PermissionDeniedError   403
+├── PermissionDeniedError   403  code TEST_WORKSPACE_ONLY from set_test_outcome() in a live workspace
 ├── NotFoundError           404
-├── ValidationError         422  .errors: dict[str, list[str]]; media rejections carry .code (e.g. FACE_NOT_FOUND)
+├── ValidationError         422  .errors: dict[str, list[str]]; media rejections carry .code (e.g. FACE_NOT_FOUND); also INVALID_STATUS, WEBHOOK_SUBSCRIPTION_LIMIT
 ├── RateLimitError          429  .retry_after: float | None, raised after the retries run out
 ├── ServerError             5xx
 └── TransportError          no response (DNS, connection, TLS, timeout); __cause__ is the httpx exception
@@ -53,20 +55,20 @@ WebhookVerificationError     see "Outbound webhook"
 
 The API uses four error body shapes; the client reads all of them:
 
-- `{ error: { code, message } }` — most errors (401 auth, 429 `RATE_LIMIT`, submit 422, media download 404). `error_data` is the inner object.
+- `{ error: { code, message } }` — most errors (401 auth, 429 `RATE_LIMIT`, submit 422, media download 404, test outcome 403 `TEST_WORKSPACE_ONLY` and 422 `INVALID_STATUS`, subscription 422 `WEBHOOK_SUBSCRIPTION_LIMIT`). `error_data` is the inner object.
 - `{ code, message, ...extra }` — flat: `402 PAYMENT_METHOD_REQUIRED` (extra: `free_verifications_remaining`, `trial_ends_at`, `trial_active`) and media-quality rejections on upload (`422`, e.g. `FACE_NOT_FOUND`; `500 VALIDATION_SERVICE_UNAVAILABLE`). `error_data` is the whole body.
 - `{ message, errors }` — request validation (`422`). `code` is `None`; `errors` has the fields.
-- `{ message }` — `403` (verification not in your workspace) and `404` (`Resource not found`).
+- `{ message }` — `403` (verification not in your workspace) and `404` (`Resource not found`, also an unknown webhook subscription).
 
 A 2xx with an empty body returns `None` from the methods typed `-> None`; where a model is
 promised, an empty or non-JSON 2xx raises `ProofAgeError` (a non-JSON one almost always means
 `base_url` points at a website rather than the API).
 
-Retries: GETs retry on 408, 429, 5xx, timeouts and transport errors. POSTs retry **only** on 429
-and on errors raised before anything was sent (`httpx.ConnectError`, `httpx.ConnectTimeout`) —
-never on 5xx or after sending began (`WriteError`, `WriteTimeout`, `ReadError`, `ReadTimeout`,
-`RemoteProtocolError`), where the server may already have created the verification or stored the
-upload. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, up to 60 seconds —
+Retries: GETs retry on 408, 429, 5xx, timeouts and transport errors. POSTs and DELETEs retry
+**only** on 429 and on errors raised before anything was sent (`httpx.ConnectError`,
+`httpx.ConnectTimeout`) — never on 5xx or after sending began (`WriteError`, `WriteTimeout`,
+`ReadError`, `ReadTimeout`, `RemoteProtocolError`), where the server may already have created the
+verification or subscription, stored the upload or set the outcome. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, up to 60 seconds —
 a longer one raises `RateLimitError` at once with `retry_after` set — else `retry_delay * attempt`.
 A 2xx whose body does not match the model raises `ProofAgeError` ("Unexpected response shape from
 GET /v1/..."), naming the fields but never their values.
@@ -76,8 +78,10 @@ GET /v1/..."), naming the fields but never their values.
 - `X-API-Key`: workspace API key (plaintext; the server SHA256-hashes it).
 - `X-HMAC-Signature`: hex HMAC-SHA256 with the workspace secret key over a canonical string:
   - JSON / no-file requests: `METHOD + /{version}/{path} + ?query + rawJsonBody` (direct
-    concatenation, no delimiter; the query part only when there is one, keys sorted and values
-    RFC 3986-encoded). The body is serialised once, compact, and sent as exactly the signed bytes;
+    concatenation, no delimiter; the query part only when there is one, keys sorted and keys and
+    values RFC 3986-encoded, so `approved,declined` is `approved%2Cdeclined` and a space `%20`).
+    The client builds the query in that form, skipping `None` arguments, and sends exactly the
+    string it signed. The body is serialised once, compact, and sent as exactly the signed bytes;
     an empty payload is the empty string, never `{}`.
   - Multipart (file) requests: `METHOD/{version}/{path}\n{fields}\n{comma-joined sorted sha256(file) hashes}`,
     where `{fields}` is PHP `http_build_query(ksort($fields), '', '&', PHP_QUERY_RFC3986)` — keys
@@ -105,6 +109,22 @@ Errors: `402` `PaymentRequiredError`; `422` `ValidationError`.
 
 - `DuplicateCheck`: `{ checked: bool, duplicate_count: int, duplicates: [ { verification_id: str, external_id: str|None, similarity_score: float, verified_at: datetime|None } ] }` — always present.
 - `Erasure`: `{ erased_at: datetime, scope: "personal_data", reason: str|None, requested_via: "customer"|"proofage"|"retention"|None }` — `None` until the verification's personal data is erased. `reason` is an erasure reason code (`data_subject_request`, `customer_request`, `retention_policy`, `test_data`, `other`) or `None` if unrecorded.
+
+### GET /verifications — `client.verifications.list(*, status=None, external_id=None, limit=None, cursor=None)` → `VerificationList`
+Request (query, all optional): `status: VerificationStatus | str | list[VerificationStatus | str]` (one status, a list, or a comma-separated string; sent comma-separated; `documents_required` is not a filter, such a verification is stored as `started`; an empty list raises `ValueError`), `external_id: str(<=255)` (exact, case-sensitive), `limit: int(1..100, default 20)`, `cursor: str` (the previous page's `next_cursor`; send the same filters with it).
+Response: `{ data: [Verification], next_cursor: str|None }` — newest first, each item the shape `get()` returns; `next_cursor` is `None` on the last page. Only the API key's workspace is listed.
+Errors: `422` `ValidationError` (unknown status, `limit` out of range).
+
+```python
+cursor = None
+while True:
+    page = client.verifications.list(status=["approved", "declined"], limit=100, cursor=cursor)
+    for verification in page.data:
+        ...
+    if page.next_cursor is None:
+        break
+    cursor = page.next_cursor
+```
 
 ### GET /verifications/{verification} — `client.verifications.get(verification_id)` → `Verification`
 Request: none.
@@ -140,18 +160,43 @@ Response: `{ verification_id: str, attempt_id: str|None, age_threshold: { minimu
 Request: `reason_code: BlockFaceReasonCode | str`, `reason: str(<=1000)`.
 Response: `204 No Content`.
 
-Every `verification_id` and `media_id` must be a ProofAge id (letters, digits, `-`, `_`); anything else raises `ValueError` before a request is built.
+### POST /verifications/{verification}/test-outcome — `client.verifications.set_test_outcome(verification_id, *, status, reason=None)` → `Verification`
+**Test workspaces only.** Finishes the verification with the given outcome without a person, so an integration's handling of each outcome can be tested end to end; the decision webhooks are sent as for a real outcome. A verification nobody opened is moved through `started` and `submitted` first. Works from `created`, `started`, `submitted`, `review` and `resubmission_requested`.
+Request: `status: VerificationOutcome | str` (`approved`, `declined`, `review`, `resubmission_requested`), `reason: str(<=1000)|None` — a note kept with a `resubmission_requested` outcome in the verification's history, **not** the decision `reason` code.
+Response: the `Verification`, as `get()` returns it, with its new `status`.
+Errors: `403` `PermissionDeniedError` with `code == "TEST_WORKSPACE_ONLY"` in a live workspace (or `{ message }` for a verification of another workspace); `422` `ValidationError` with `code == "INVALID_STATUS"` when the verification is already final, or `.errors` for an invalid field. Not retried on 5xx.
+
+### POST /webhook-subscriptions — `client.webhook_subscriptions.create(*, url, statuses=None, include_document_data=None)` → `WebhookSubscription`
+Subscribes a URL to the decision webhooks, in addition to the workspace webhook URL set in the console. Built for REST hooks such as Zapier: subscribe when an automation is turned on, delete the subscription when it is turned off. Up to 50 per workspace.
+Request: `url: str` (http or https, <=2048, a public address: private, local and cloud-metadata addresses are refused), `statuses: list[VerificationStatus | str] | None` (any of `approved`, `declined`, `resubmission_requested`, `review`, `abandoned`, `expired`; `None` or omitted for all of them; a bare string raises `TypeError`), `include_document_data: bool` (API default `False`).
+Response (`201`): `{ id: str, url: str, statuses: list[VerificationStatus | str]|None, include_document_data: bool, created_at: datetime }` — `statuses` is `None` when every decision status is delivered.
+Errors: `422` `ValidationError` with `code == "WEBHOOK_SUBSCRIPTION_LIMIT"` at 50 subscriptions, or `.errors` for an invalid field. Not retried on 5xx.
+
+Deliveries have the workspace webhook's body and headers (see "Outbound webhook"), only `event == "status.updated"` (never `data.updated`) and only for the subscribed statuses. They are signed with the secret key that signed the create request while that key exists, then with the active secret key. Unless `include_document_data=True`, the body leaves out `document`, `fingerprint_signals` and `manual_moderation.performed_by` (all `None` on the parsed `WebhookEvent`). A delivery answered `410 Gone` deletes the subscription.
+
+### GET /webhook-subscriptions — `client.webhook_subscriptions.list()` → `WebhookSubscriptionList`
+Request: none.
+Response: `{ data: [WebhookSubscription] }`, newest first. Not paginated (at most 50).
+
+### DELETE /webhook-subscriptions/{subscription} — `client.webhook_subscriptions.delete(subscription_id)` → `None`
+Request: none.
+Response: `204 No Content`. Deliveries already queued are not sent.
+Errors: `404` `NotFoundError` (`Resource not found`) for an id not in the workspace. Not retried on 5xx.
+
+Every `verification_id`, `media_id` and `subscription_id` must be a ProofAge id (letters, digits, `-`, `_`); anything else raises `ValueError` before a request is built.
 
 ## Enums
 
 - `status` (`VerificationStatus`): `created`, `started`, `submitted`, `resubmission_requested`, `approved`, `declined`, `abandoned`, `expired`, `review`, or `documents_required` (the last is surfaced from the latest attempt's state, not a verification status). Open: an unknown value arrives as `str`.
+- `status` of `set_test_outcome()` (`VerificationOutcome`): `approved`, `declined`, `review`, `resubmission_requested`.
 - `reason_code` (`BlockFaceReasonCode`): `presentation_attack` (spoof: screen, print or mask), `fraudulent_document` (forged, edited, or not a real document), `scam_or_abuse` (identity may be genuine — blocked for behaviour on your platform), `underage`, `other` (explain in `reason`). Optional over the API, mandatory in the ProofAge consoles: send it whenever a person made the decision, or the block cannot be told apart from an automated one in reporting.
 - `reason` (on `declined` / `resubmission_requested`): dotted codes from the server's reason catalog — illustrative examples: `aml.blocklist.face_match`, `document.face.mismatch`, `verification.age_threshold.failed`. Treat `reason` as an open string.
 
-## Outbound webhook (ProofAge → your `callback_url` / workspace webhook URL)
+## Outbound webhook (ProofAge → your `callback_url` / workspace webhook URL / webhook subscription)
 
 Headers: `X-Auth-Client` (api key), `X-Timestamp` (unix seconds), `X-HMAC-Signature`
-(= hex HMAC-SHA256 of `{timestamp}.{rawJsonBody}` with the active secret key),
+(= hex HMAC-SHA256 of `{timestamp}.{rawJsonBody}` with the active secret key, or for a webhook
+subscription the secret key that created it while that key exists),
 `X-ProofAge-Webhook-Delivery-Id` (the same on every automatic retry of one delivery, a new one on a
 manual resend — de-duplicate on it).
 
@@ -179,15 +224,15 @@ except WebhookVerificationError as error:
   "external_metadata": dict|None,
   "reason": str|None,                          # a code only on resubmission_requested / declined
   "timestamp": datetime,
-  "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed
+  "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed and on a subscription delivery without include_document_data
   "changed_fields": list[str]|None,            # only on data.updated: names of what the correction changed (document.fields keys, or type, issuing_country, issuing_subdivision), no values
   "duplicate_detected": bool (default False),  # the three duplicate_* keys appear together
   "duplicate_count": int|None,
   "duplicate_of": { "verification_id": str, "external_id": str|None }|None,
-  "fingerprint_signals": dict|None,
+  "fingerprint_signals": dict|None,            # None on a subscription delivery without include_document_data
   "manual_moderation": {                       # after a console approve/decline
     "action": "approve"|"decline", "reason": str, "source": "tenant_admin"|"landlord_admin",
-    "performed_by": { "id": int, "name": str|None, "email": str|None, "role": str|None },
+    "performed_by": { "id": int, "name": str|None, "email": str|None, "role": str|None }|None,  # None on a subscription delivery without include_document_data
     "source_status": str|None, "source_reason": str|None
   }|None,
   "delivery_id": str|None                      # from X-ProofAge-Webhook-Delivery-Id
