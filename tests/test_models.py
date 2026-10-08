@@ -135,6 +135,34 @@ def test_webhook_event_optional_blocks() -> None:
     assert event.delivery_id is None
 
 
+def test_a_subscription_delivery_without_document_data_parses() -> None:
+    # A webhook subscription created without include_document_data receives the body
+    # without document, fingerprint_signals and manual_moderation.performed_by.
+    event = WebhookEvent.model_validate(
+        {
+            "verification_id": "v",
+            "event": "status.updated",
+            "status": "approved",
+            "external_id": "u-1",
+            "external_metadata": None,
+            "reason": None,
+            "timestamp": "2026-10-08T12:00:00+00:00",
+            "manual_moderation": {
+                "action": "approve",
+                "reason": "Checked by hand",
+                "source": "tenant_admin",
+                "source_status": "review",
+                "source_reason": None,
+            },
+        }
+    )
+    assert event.document is None
+    assert event.fingerprint_signals is None
+    assert event.manual_moderation is not None
+    assert event.manual_moderation.performed_by is None
+    assert event.manual_moderation.source_status == "review"
+
+
 def test_a_number_where_a_string_is_documented_does_not_break_parsing() -> None:
     # Guards against type drift between the API and its spec, as happened with the
     # consent version before 2026-09-28.

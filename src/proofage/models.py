@@ -266,7 +266,9 @@ class ManualModeration(ProofAgeModel):
     action: str
     reason: str
     source: str
-    performed_by: PerformedBy
+    performed_by: PerformedBy | None = None
+    """Who moderated. Absent from a webhook subscription's deliveries unless it was created with
+    `include_document_data=True`."""
     source_status: str | None = None
     source_reason: str | None = None
 
