@@ -173,12 +173,14 @@ except WebhookVerificationError as error:
 ```
 {
   "verification_id": str,
-  "status": VerificationStatus | str,
+  "event": WebhookEventType | str | None,      # "status.updated" | "data.updated"; None = status.updated (a retry of a delivery created before the field existed)
+  "status": VerificationStatus | str,          # on data.updated: the current status, unchanged
   "external_id": str|None,
   "external_metadata": dict|None,
   "reason": str|None,                          # a code only on resubmission_requested / declined
   "timestamp": datetime,
   "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed
+  "changed_fields": list[str]|None,            # only on data.updated: names of what the correction changed (document.fields keys, or type, issuing_country, issuing_subdivision), no values
   "duplicate_detected": bool (default False),  # the three duplicate_* keys appear together
   "duplicate_count": int|None,
   "duplicate_of": { "verification_id": str, "external_id": str|None }|None,
@@ -191,6 +193,15 @@ except WebhookVerificationError as error:
   "delivery_id": str|None                      # from X-ProofAge-Webhook-Delivery-Id
 }
 ```
+
+**Dispatch on `event` first.** `status.updated` (or `event is None`) is every webhook you already know:
+the verification moved to `status`. `data.updated` means someone on the tenant's team corrected document
+fields the reader got wrong (console or MCP): `status` is the current one and a correction never changes
+it, `document` holds the corrected values and `changed_fields` names what changed. It is not a decision:
+update the stored document fields and leave the verification's status alone. A handler that ignores
+`event` sees what looks like a resend of the same status, which it must tolerate anyway (de-duplicate on
+`delivery_id`, make applying a status idempotent). Compare with `==` (`event.event == WebhookEventType.DATA_UPDATED`):
+an event added later arrives as a plain string.
 
 ## Framework integrations
 

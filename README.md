@@ -119,6 +119,20 @@ except WebhookVerificationError as error:
 A delivery can arrive more than once: de-duplicate on `event.delivery_id`, which stays the same
 on every automatic retry.
 
+Read `event.event` before `event.status`. It is `status.updated` for a decision, and `data.updated`
+when someone on your team corrected document fields the reader got wrong: the status is then the
+current one, unchanged, `event.document` has the corrected values and `event.changed_fields` the names
+of the fields that changed. A body without `event` (a retry of an older delivery) is `status.updated`.
+
+```python
+from proofage import WebhookEventType
+
+if event.event == WebhookEventType.DATA_UPDATED:
+    ...  # refresh the stored document fields; this is not a new decision
+elif event.status == VerificationStatus.APPROVED:
+    ...
+```
+
 Runnable examples live in [`examples/`](https://github.com/ProofAge/python-sdk/tree/main/examples):
 a Telegram bot on aiogram, a FastAPI app and Django views.
 

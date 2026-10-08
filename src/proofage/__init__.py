@@ -24,6 +24,7 @@ from .models import (
     DocumentResultType,
     VerificationStatus,
     WebhookEvent,
+    WebhookEventType,
 )
 from .webhooks import verify_webhook, verify_webhook_signature
 
@@ -45,6 +46,7 @@ __all__ = [
     "ValidationError",
     "VerificationStatus",
     "WebhookEvent",
+    "WebhookEventType",
     "WebhookVerificationError",
     "__version__",
     "verify_webhook",

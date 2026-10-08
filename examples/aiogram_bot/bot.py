@@ -27,6 +27,7 @@ from aiohttp import web
 from proofage import (
     AsyncProofAge,
     VerificationStatus,
+    WebhookEventType,
     WebhookVerificationError,
     verify_webhook,
 )
@@ -65,6 +66,9 @@ def build_webhook_app(bot: Bot) -> web.Application:
             return web.json_response(
                 {"error": {"code": error.code, "message": error.message}}, status=error.http_status
             )
+        # Corrected document fields are not a decision: nothing to tell the user.
+        if event.event == WebhookEventType.DATA_UPDATED:
+            return web.Response(status=200)
         # Sessions made elsewhere (the console, another integration) have their own external_id.
         if event.external_id is None or not event.external_id.lstrip("-").isdigit():
             return web.Response(status=200)

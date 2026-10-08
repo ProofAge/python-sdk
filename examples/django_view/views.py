@@ -15,7 +15,7 @@ from __future__ import annotations
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 
-from proofage import ProofAge, VerificationStatus
+from proofage import ProofAge, VerificationStatus, WebhookEventType
 from proofage.integrations.django import proofage_webhook
 
 client = ProofAge()  # one client (and connection pool) for the whole process
@@ -32,6 +32,8 @@ def start(request: HttpRequest) -> HttpResponse:
 def webhook(request: HttpRequest) -> HttpResponse:
     """ProofAge calls this with the decision; `request.proofage_event` is already verified."""
     event = request.proofage_event
+    if event.event == WebhookEventType.DATA_UPDATED:
+        return HttpResponse(status=200)  # corrected document fields, not a decision
     if event.status == VerificationStatus.APPROVED:
         ...  # e.g. mark User(pk=event.external_id) as verified, keyed on event.delivery_id
     return HttpResponse(status=200)

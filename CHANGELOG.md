@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `WebhookEvent.event` (`WebhookEventType.STATUS_UPDATED` or `DATA_UPDATED`, an unknown
+  value as a plain string) and `WebhookEvent.changed_fields`. `data.updated` is sent when a tenant
+  corrects document fields the reader got wrong: `status` is the current one, unchanged, `document`
+  holds the corrected values and `changed_fields` names what changed. Both default to `None`, so a
+  body without `event` (a retry of an older delivery, which means `status.updated`) still parses.
+  Read `event` before `status`; the examples and `AGENTS.md` do.
+
 ## 0.6.0 — 2026-10-02
 
 - **Added:** `Document.issuing_subdivision`, the state or province of issuance as a bare code

@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from proofage import AsyncProofAge
+from proofage import AsyncProofAge, WebhookEventType
 from proofage.integrations.fastapi import ProofAgeWebhook
 
 # A real app keeps this in its database, and ignores a late retry of an older delivery.
@@ -47,6 +47,9 @@ async def start(body: StartRequest, request: Request) -> dict[str, str]:
 @app.post("/webhooks/proofage")
 async def proofage_webhook(event: ProofAgeWebhook) -> dict[str, bool]:
     """ProofAge calls this with the decision; the event is already verified."""
+    if event.event == WebhookEventType.DATA_UPDATED:
+        # Corrected document fields, not a decision: the status is unchanged.
+        return {"ok": True}
     if event.external_id is not None:
         statuses[event.external_id] = str(event.status)
     return {"ok": True}

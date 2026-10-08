@@ -244,19 +244,37 @@ class DuplicateOf(ProofAgeModel):
     external_id: str | None
 
 
+class WebhookEventType(_ApiEnum):
+    """What a webhook reports: a status change, or a correction of the document fields."""
+
+    STATUS_UPDATED = "status.updated"
+    DATA_UPDATED = "data.updated"
+
+
+EventType = Annotated[WebhookEventType | str, Field(union_mode="left_to_right")]
+"""A known event as the enum member, an unknown one as the raw string."""
+
+
 class WebhookEvent(ProofAgeModel):
     """A verified webhook. `delivery_id` comes from `X-ProofAge-Webhook-Delivery-Id`:
     the same on every automatic retry of one delivery, so de-duplicate on it."""
 
     verification_id: str
+    event: EventType | None = None
+    """`status.updated` or `data.updated`. None means `status.updated`: a retry of a delivery
+    created before the field existed carries no `event`. Read it before `status`."""
     status: Status
+    """On `data.updated`, the current status, which a correction never changes."""
     external_id: str | None
     external_metadata: dict[str, Any] | None
     reason: str | None
     timestamp: datetime
     document: Document | None = None
     """The object `verifications.document()` returns, without media, on every decision webhook.
-    None on a body sent before it existed; the seven KYC-only keys are absent on age workspaces."""
+    None on a body sent before it existed; the seven KYC-only keys are absent on age workspaces.
+    On `data.updated` it holds the corrected values."""
+    changed_fields: list[str] | None = None
+    """Only on `data.updated`: names of the document fields the correction changed, no values."""
     duplicate_detected: bool = False
     duplicate_count: int | None = None
     duplicate_of: DuplicateOf | None = None

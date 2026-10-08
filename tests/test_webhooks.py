@@ -9,7 +9,7 @@ import pytest
 
 from proofage import WebhookVerificationError, verify_webhook, verify_webhook_signature
 from proofage._signing import webhook_signature
-from proofage.models import DocumentResultType, VerificationStatus
+from proofage.models import DocumentResultType, VerificationStatus, WebhookEventType
 
 from .conftest import API_KEY, SECRET_KEY
 
@@ -256,3 +256,41 @@ def test_an_invalid_payload_error_does_not_echo_the_body() -> None:
     assert raised.value.code == "INVALID_PAYLOAD"
     assert "a.person@example.com" not in raised.value.message
     assert "verification_id" in raised.value.message
+
+
+def test_a_data_updated_webhook_keeps_the_status_and_names_the_changed_fields() -> None:
+    body = _signed(
+        {
+            **_BASE,
+            "event": "data.updated",
+            "document": {
+                "type": "id",
+                "issuing_country": "FR",
+                "issuing_subdivision": None,
+                "fields": {
+                    "first_name": "JEAN",
+                    "last_name": "MARTIN",
+                    "date_of_birth": "1988-02-11",
+                    "document_number": "X1",
+                },
+            },
+            "changed_fields": ["date_of_birth"],
+        }
+    )
+    event = verify(body)
+    assert event.event is WebhookEventType.DATA_UPDATED
+    assert event.status is VerificationStatus.APPROVED
+    assert event.changed_fields == ["date_of_birth"]
+    assert event.document is not None
+    assert event.document.fields.date_of_birth == date(1988, 2, 11)
+
+
+def test_a_body_without_event_is_a_status_update_and_an_unknown_event_stays_a_string() -> None:
+    event = verify()
+    assert event.event is None
+    assert event.changed_fields is None
+    assert verify(_signed({**_BASE, "event": "something.new"})).event == "something.new"
+    assert (
+        verify(_signed({**_BASE, "event": "status.updated"})).event
+        is WebhookEventType.STATUS_UPDATED
+    )
