@@ -48,6 +48,15 @@ def status_filter(status: str | Sequence[str] | None) -> str | None:
     return ",".join(values)
 
 
+def status_list(statuses: Sequence[str] | None) -> list[str] | None:
+    """A JSON list of statuses, enum members as their values."""
+    if statuses is None:
+        return None
+    if isinstance(statuses, str):
+        raise TypeError("statuses takes a list of statuses, not a single string")
+    return [str(_value(item)) for item in statuses]
+
+
 MEDIA_TYPES = ("selfie", "liveness_selfie", "document")
 
 

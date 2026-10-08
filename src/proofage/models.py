@@ -138,6 +138,21 @@ class VerificationList(ProofAgeModel):
     """Pass it as `cursor`, with the same filters, for the next page; None on the last page."""
 
 
+class WebhookSubscription(ProofAgeModel):
+    id: str
+    url: str
+    statuses: list[Status] | None
+    """The decision statuses delivered; None means every one of them."""
+    include_document_data: bool
+    created_at: datetime
+
+
+class WebhookSubscriptionList(ProofAgeModel):
+    """`webhook_subscriptions.list()`: every subscription of the workspace, newest first."""
+
+    data: list[WebhookSubscription]
+
+
 class AcceptConsentResult(ProofAgeModel):
     consent_version_id: int
     consent_accepted_at: datetime

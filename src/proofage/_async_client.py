@@ -30,6 +30,7 @@ from ._transport import (
 )
 from .errors import TransportError
 from .resources.verifications import AsyncVerifications
+from .resources.webhook_subscriptions import AsyncWebhookSubscriptions
 from .resources.workspace import AsyncWorkspace
 
 
@@ -69,6 +70,7 @@ class AsyncProofAge:
         self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
         self.workspace = AsyncWorkspace(self)
         self.verifications = AsyncVerifications(self)
+        self.webhook_subscriptions = AsyncWebhookSubscriptions(self)
 
     def __repr__(self) -> str:
         return f"AsyncProofAge({self._config!r})"

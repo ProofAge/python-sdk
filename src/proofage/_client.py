@@ -29,6 +29,7 @@ from ._transport import (
 )
 from .errors import TransportError
 from .resources.verifications import Verifications
+from .resources.webhook_subscriptions import WebhookSubscriptions
 from .resources.workspace import Workspace
 
 
@@ -68,6 +69,7 @@ class ProofAge:
         self._sleep: Callable[[float], None] = time.sleep
         self.workspace = Workspace(self)
         self.verifications = Verifications(self)
+        self.webhook_subscriptions = WebhookSubscriptions(self)
 
     def __repr__(self) -> str:
         return f"ProofAge({self._config!r})"
