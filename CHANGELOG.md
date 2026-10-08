@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.8.0 — 2026-10-09
 
 - **Added:** `client.verifications.list(status=, external_id=, limit=, cursor=)` → `VerificationList`
   (`data`, `next_cursor`): the workspace's verifications, newest first, a page at a time. `status`
