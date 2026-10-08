@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import re
 import warnings
 from datetime import date
 from typing import Any
 
+import httpx
 import pytest
 import respx
 
 from proofage import ProofAge
+from proofage.errors import PermissionDeniedError, ServerError, ValidationError
 from proofage.models import (
     AcceptConsentResult,
     AgeEstimation,
@@ -19,12 +23,20 @@ from proofage.models import (
     DocumentResultType,
     Verification,
     VerificationDocument,
+    VerificationList,
+    VerificationOutcome,
+    VerificationStatus,
 )
 
 from .conftest import API_KEY, SECRET_KEY, VERIFICATION_ID, Harness
 from .test_models import VERIFICATION
 
 VID = VERIFICATION_ID
+
+
+def sign_raw(canonical: str) -> str:
+    """The signature computed here, independently of the SDK's signing module."""
+    return hmac.new(SECRET_KEY.encode(), canonical.encode(), hashlib.sha256).hexdigest()
 
 
 def body(route: respx.Route) -> Any:
@@ -227,6 +239,131 @@ def test_block_face_accepts_the_enum_or_a_string(sdk: Harness, api: respx.MockRo
     assert body(route) == {"reason_code": "underage", "reason": "Admitted being 15"}
     sdk.call(lambda c: c.verifications.block_face(VID, reason_code="other", reason="x"))
     assert body(route) == {"reason_code": "other", "reason": "x"}
+
+
+GET_PAYLOAD = {k: v for k, v in VERIFICATION.items() if k != "url"}
+
+
+def test_list_sends_no_query_without_filters(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/verifications").respond(
+        200, json={"data": [GET_PAYLOAD], "next_cursor": "eyJpZCI6MX0"}
+    )
+    page = sdk.call(lambda c: c.verifications.list())
+    assert isinstance(page, VerificationList)
+    assert type(page.data[0]) is Verification
+    assert page.data[0].status is VerificationStatus.APPROVED
+    assert page.next_cursor == "eyJpZCI6MX0"
+    request = route.calls.last.request
+    assert request.url.query == b""
+    assert request.headers["X-HMAC-Signature"] == sign_raw("GET/v1/verifications")
+
+
+def test_list_signs_the_query_it_sends(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/verifications").respond(200, json={"data": [], "next_cursor": None})
+    page = sdk.call(
+        lambda c: c.verifications.list(
+            status=[VerificationStatus.APPROVED, "declined"],
+            external_id="user 42",
+            limit=50,
+            cursor="eyJpZCI6MX0",
+        )
+    )
+    assert page.data == [] and page.next_cursor is None
+    request = route.calls.last.request
+    query = "cursor=eyJpZCI6MX0&external_id=user%2042&limit=50&status=approved%2Cdeclined"
+    assert request.url.query == query.encode()
+    assert request.headers["X-HMAC-Signature"] == sign_raw(f"GET/v1/verifications?{query}")
+
+
+@pytest.mark.parametrize(
+    ("status", "sent"),
+    [
+        ("review", "review"),
+        (VerificationStatus.EXPIRED, "expired"),
+        ("approved,declined", "approved%2Cdeclined"),
+        (("created",), "created"),
+    ],
+)
+def test_list_takes_one_status_a_list_or_a_comma_string(
+    sdk: Harness, api: respx.MockRouter, status: Any, sent: str
+) -> None:
+    route = api.get("/verifications").respond(200, json={"data": [], "next_cursor": None})
+    sdk.call(lambda c: c.verifications.list(status=status))
+    assert route.calls.last.request.url.query == f"status={sent}".encode()
+
+
+def test_list_refuses_an_empty_status_list(api: respx.MockRouter) -> None:
+    with (
+        ProofAge(api_key=API_KEY, secret_key=SECRET_KEY, base_url="https://api.test") as client,
+        pytest.raises(ValueError, match="at least one status"),
+    ):
+        client.verifications.list(status=[])
+    assert not api.calls
+
+
+def test_list_is_retried_on_5xx(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/verifications").mock(
+        side_effect=[
+            httpx.Response(502),
+            httpx.Response(200, json={"data": [], "next_cursor": None}),
+        ]
+    )
+    sdk.call(lambda c: c.verifications.list(limit=1), retry_delay=0)
+    assert route.call_count == 2
+    assert route.calls.last.request.url.query == b"limit=1"
+
+
+def test_set_test_outcome(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post(f"/verifications/{VID}/test-outcome").respond(
+        200, json={**GET_PAYLOAD, "status": "resubmission_requested"}
+    )
+    verification = sdk.call(
+        lambda c: c.verifications.set_test_outcome(
+            VID, status=VerificationOutcome.RESUBMISSION_REQUESTED, reason="Blurry photo"
+        )
+    )
+    assert type(verification) is Verification
+    assert verification.status is VerificationStatus.RESUBMISSION_REQUESTED
+    assert body(route) == {"status": "resubmission_requested", "reason": "Blurry photo"}
+    sdk.call(lambda c: c.verifications.set_test_outcome(VID, status="approved"))
+    assert body(route) == {"status": "approved"}
+
+
+def test_set_test_outcome_is_not_retried_on_5xx(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post(f"/verifications/{VID}/test-outcome").respond(500)
+    with pytest.raises(ServerError):
+        sdk.call(lambda c: c.verifications.set_test_outcome(VID, status="approved"), retry_delay=0)
+    assert route.call_count == 1
+
+
+def test_set_test_outcome_in_a_live_workspace(sdk: Harness, api: respx.MockRouter) -> None:
+    api.post(f"/verifications/{VID}/test-outcome").respond(
+        403,
+        json={
+            "error": {
+                "code": "TEST_WORKSPACE_ONLY",
+                "message": "The outcome can only be set in a test workspace.",
+            }
+        },
+    )
+    with pytest.raises(PermissionDeniedError) as caught:
+        sdk.call(lambda c: c.verifications.set_test_outcome(VID, status="approved"))
+    assert caught.value.code == "TEST_WORKSPACE_ONLY"
+
+
+def test_set_test_outcome_on_a_final_verification(sdk: Harness, api: respx.MockRouter) -> None:
+    api.post(f"/verifications/{VID}/test-outcome").respond(
+        422,
+        json={
+            "error": {
+                "code": "INVALID_STATUS",
+                "message": "The verification is already approved, a final status.",
+            }
+        },
+    )
+    with pytest.raises(ValidationError) as caught:
+        sdk.call(lambda c: c.verifications.set_test_outcome(VID, status="declined"))
+    assert caught.value.code == "INVALID_STATUS"
 
 
 @pytest.mark.parametrize("bad_id", ["../workspace", "abc?x=1", "", "a/b", "a#b", "a%2F"])

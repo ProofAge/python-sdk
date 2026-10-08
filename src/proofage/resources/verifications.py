@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import builtins
 import os
 import tempfile
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
@@ -19,11 +20,15 @@ from ..models import (
     CreatedVerification,
     Verification,
     VerificationDocument,
+    VerificationList,
+    VerificationOutcome,
+    VerificationStatus,
 )
 from ._payloads import (
     compact,
     path_segment,
     read_upload,
+    status_filter,
     upload_fields,
     verification_path,
     warn_widget_fields,
@@ -78,6 +83,28 @@ class Verifications:
     def get(self, verification_id: str) -> Verification:
         """`GET /verifications/{id}`."""
         return self._client._get_model(verification_path(verification_id), Verification)
+
+    def list(
+        self,
+        *,
+        status: VerificationStatus | str | Sequence[VerificationStatus | str] | None = None,
+        external_id: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> VerificationList:
+        """`GET /verifications`: one page of the workspace's verifications, newest first.
+
+        `status` is one status, a list of them or a comma-separated string. `limit` is 1 to 100
+        (the API's default is 20). For the next page pass the page's `next_cursor` as `cursor`
+        with the same filters; it is None on the last page.
+        """
+        query = {
+            "status": status_filter(status),
+            "external_id": external_id,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        return self._client._get_model("verifications", VerificationList, query)
 
     def accept_consent(
         self,
@@ -150,6 +177,25 @@ class Verifications:
         payload = compact({"reason_code": reason_code, "reason": reason})
         self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
 
+    def set_test_outcome(
+        self,
+        verification_id: str,
+        *,
+        status: VerificationOutcome | str,
+        reason: str | None = None,
+    ) -> Verification:
+        """`POST /verifications/{id}/test-outcome`. Test workspaces only.
+
+        Finishes the verification with `status` (`approved`, `declined`, `review` or
+        `resubmission_requested`) without a person, sending the decision webhooks as a real
+        outcome would. `reason` is a note kept with a `resubmission_requested` outcome, not the
+        decision reason code. Not retried on a 5xx: read the verification before trying again.
+        """
+        payload = compact({"status": status, "reason": reason})
+        return self._client._post_model(
+            verification_path(verification_id, "/test-outcome"), payload, Verification
+        )
+
     def upload_media(
         self,
         verification_id: str,
@@ -163,7 +209,7 @@ class Verifications:
         head_turn_step: int | None = None,
         capture_resolution: str | dict[str, Any] | None = None,
         device_info: str | dict[str, Any] | None = None,
-        liveness_telemetry: str | list[Any] | None = None,
+        liveness_telemetry: str | builtins.list[Any] | None = None,
     ) -> None:
         """`POST /verifications/{id}/media` (multipart). Custom capture flows only.
 
@@ -270,6 +316,28 @@ class AsyncVerifications:
         """`GET /verifications/{id}`."""
         return await self._client._get_model(verification_path(verification_id), Verification)
 
+    async def list(
+        self,
+        *,
+        status: VerificationStatus | str | Sequence[VerificationStatus | str] | None = None,
+        external_id: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> VerificationList:
+        """`GET /verifications`: one page of the workspace's verifications, newest first.
+
+        `status` is one status, a list of them or a comma-separated string. `limit` is 1 to 100
+        (the API's default is 20). For the next page pass the page's `next_cursor` as `cursor`
+        with the same filters; it is None on the last page.
+        """
+        query = {
+            "status": status_filter(status),
+            "external_id": external_id,
+            "limit": limit,
+            "cursor": cursor,
+        }
+        return await self._client._get_model("verifications", VerificationList, query)
+
     async def accept_consent(
         self,
         verification_id: str,
@@ -341,6 +409,25 @@ class AsyncVerifications:
         payload = compact({"reason_code": reason_code, "reason": reason})
         await self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
 
+    async def set_test_outcome(
+        self,
+        verification_id: str,
+        *,
+        status: VerificationOutcome | str,
+        reason: str | None = None,
+    ) -> Verification:
+        """`POST /verifications/{id}/test-outcome`. Test workspaces only.
+
+        Finishes the verification with `status` (`approved`, `declined`, `review` or
+        `resubmission_requested`) without a person, sending the decision webhooks as a real
+        outcome would. `reason` is a note kept with a `resubmission_requested` outcome, not the
+        decision reason code. Not retried on a 5xx: read the verification before trying again.
+        """
+        payload = compact({"status": status, "reason": reason})
+        return await self._client._post_model(
+            verification_path(verification_id, "/test-outcome"), payload, Verification
+        )
+
     async def upload_media(
         self,
         verification_id: str,
@@ -354,7 +441,7 @@ class AsyncVerifications:
         head_turn_step: int | None = None,
         capture_resolution: str | dict[str, Any] | None = None,
         device_info: str | dict[str, Any] | None = None,
-        liveness_telemetry: str | list[Any] | None = None,
+        liveness_telemetry: str | builtins.list[Any] | None = None,
     ) -> None:
         """`POST /verifications/{id}/media` (multipart). Custom capture flows only.
 

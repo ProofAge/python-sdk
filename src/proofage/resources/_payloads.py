@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 import warnings
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from pathlib import Path
 from typing import Any, BinaryIO
@@ -27,13 +27,25 @@ def verification_path(verification_id: str, suffix: str = "") -> str:
     return f"verifications/{path_segment(verification_id, 'verification_id')}{suffix}"
 
 
+def _value(item: Any) -> Any:
+    return item.value if isinstance(item, Enum) else item
+
+
 def compact(values: Mapping[str, Any]) -> dict[str, Any]:
     """Drop the arguments left at None; turn enum members into their values."""
-    return {
-        key: value.value if isinstance(value, Enum) else value
-        for key, value in values.items()
-        if value is not None
-    }
+    return {key: _value(value) for key, value in values.items() if value is not None}
+
+
+def status_filter(status: str | Sequence[str] | None) -> str | None:
+    """The `status` query parameter: a comma-separated list, as the API reads it."""
+    if status is None:
+        return None
+    if isinstance(status, str):
+        return str(_value(status))
+    values = [str(_value(item)) for item in status]
+    if not values:
+        raise ValueError("status needs at least one status; pass None to list every status")
+    return ",".join(values)
 
 
 MEDIA_TYPES = ("selfie", "liveness_selfie", "document")

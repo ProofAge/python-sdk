@@ -56,6 +56,15 @@ class BlockFaceReasonCode(_ApiEnum):
     OTHER = "other"
 
 
+class VerificationOutcome(_ApiEnum):
+    """The outcomes `verifications.set_test_outcome()` can set, in a test workspace only."""
+
+    APPROVED = "approved"
+    DECLINED = "declined"
+    REVIEW = "review"
+    RESUBMISSION_REQUESTED = "resubmission_requested"
+
+
 Status = Annotated[VerificationStatus | str, Field(union_mode="left_to_right")]
 """A known status as the enum member, an unknown one as the raw string."""
 
@@ -119,6 +128,14 @@ class Verification(ProofAgeModel):
 class CreatedVerification(Verification):
     url: str
     """The hosted session the person opens."""
+
+
+class VerificationList(ProofAgeModel):
+    """One page of `verifications.list()`, newest first."""
+
+    data: list[Verification]
+    next_cursor: str | None
+    """Pass it as `cursor`, with the same filters, for the next page; None on the last page."""
 
 
 class AcceptConsentResult(ProofAgeModel):
