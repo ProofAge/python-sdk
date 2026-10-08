@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `client.verifications.list(status=, external_id=, limit=, cursor=)` → `VerificationList`
+  (`data`, `next_cursor`): the workspace's verifications, newest first, a page at a time. `status`
+  takes one status, a list or a comma-separated string. The query string is built, signed and sent
+  in the form the API normalises (keys sorted, RFC 3986).
+- **Added:** `client.webhook_subscriptions.create(url=, statuses=, include_document_data=)`,
+  `list()` and `delete(subscription_id)`, for REST hooks such as Zapier. DELETE follows the POST
+  retry rules: never retried on a 5xx.
+- **Added:** `client.verifications.set_test_outcome(verification_id, status=, reason=)` and the
+  `VerificationOutcome` enum: finish a verification in a test workspace without a person.
+- **Fixed:** `ManualModeration.performed_by` is optional. A webhook subscription created without
+  `include_document_data` receives `manual_moderation` without it, which `verify_webhook` rejected
+  as `INVALID_PAYLOAD`.
+
 ## 0.7.0 — 2026-10-08
 
 - **Added:** `WebhookEvent.event` (`WebhookEventType.STATUS_UPDATED` or `DATA_UPDATED`, an unknown

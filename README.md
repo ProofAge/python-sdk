@@ -136,6 +136,62 @@ elif event.status == VerificationStatus.APPROVED:
 Runnable examples live in [`examples/`](https://github.com/ProofAge/python-sdk/tree/main/examples):
 a Telegram bot on aiogram, a FastAPI app and Django views.
 
+## Listing verifications
+
+`verifications.list()` returns one page, newest first, filtered by status and `external_id`. Pass
+a page's `next_cursor` back as `cursor`, with the same filters, until it is `None`:
+
+```python
+from proofage import VerificationStatus
+
+cursor = None
+while True:
+    page = client.verifications.list(
+        status=[VerificationStatus.APPROVED, VerificationStatus.DECLINED], limit=100, cursor=cursor
+    )
+    for verification in page.data:
+        print(verification.id, verification.status)
+    if page.next_cursor is None:
+        break
+    cursor = page.next_cursor
+```
+
+## Webhook subscriptions (Zapier and other REST hooks)
+
+Besides the workspace webhook URL set in the console, a workspace can subscribe up to 50 more
+URLs to the decision webhooks over the API: subscribe when an automation is turned on, delete the
+subscription when it is turned off.
+
+```python
+subscription = client.webhook_subscriptions.create(
+    url="https://hooks.zapier.com/hooks/standard/12345678/abcdef/",
+    statuses=["approved", "declined"],  # omit for every decision status
+)
+client.webhook_subscriptions.list().data  # newest first
+client.webhook_subscriptions.delete(subscription.id)
+```
+
+Deliveries are signed and verified like the workspace webhook, and carry only `status.updated`
+events. Unless the subscription was created with `include_document_data=True`, they leave out
+`document`, `fingerprint_signals` and `manual_moderation.performed_by`, so personal data stays out
+of the subscriber's logs.
+
+## Testing outcomes in a test workspace
+
+In a test workspace, `set_test_outcome()` finishes a verification without a person going through
+the widget, sending the same webhooks a real outcome would, so you can test how your integration
+handles each one:
+
+```python
+from proofage import VerificationOutcome
+
+verification = client.verifications.create(external_id="candidate-42")
+client.verifications.set_test_outcome(verification.id, status=VerificationOutcome.DECLINED)
+```
+
+The outcome is `approved`, `declined`, `review` or `resubmission_requested`. A live workspace
+answers `PermissionDeniedError` with `code == "TEST_WORKSPACE_ONLY"`.
+
 ## Statuses
 
 `event.status` and `verification.status` are `VerificationStatus` members (`APPROVED`,
@@ -200,8 +256,8 @@ TLS; the SDK never closes a client you pass in.
 ## Retries
 
 - A GET is retried on 408, 429, 5xx, timeouts and connection failures.
-- A POST is retried only on 429 and when the connection never opened. It is never retried on a
-  5xx or once sending began, because the server may already have created the verification.
+- A POST or DELETE is retried only on 429 and when the connection never opened. It is never
+  retried on a 5xx or once sending began, because the server may already have acted on it.
 - A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`
   at once (with `retry_after` set) instead of blocking your thread. Otherwise the wait grows by
   `retry_delay` per attempt.
