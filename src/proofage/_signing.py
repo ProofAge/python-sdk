@@ -35,6 +35,17 @@ def normalize_query(query: str) -> str:
     return "?" + "&".join(f"{rawurlencode(k)}={rawurlencode(v)}" for k, v in pairs)
 
 
+def build_query(params: Mapping[str, Any]) -> str:
+    """The query string the server signs, without `?`: `None` values dropped, keys sorted,
+    keys and values RFC 3986-encoded, booleans `1`/`0`. Sending this exact string means
+    `normalize_query()` of it is itself."""
+    return "&".join(
+        f"{rawurlencode(str(key))}={rawurlencode(_scalar(params[key]))}"
+        for key in sorted(params, key=str)
+        if params[key] is not None
+    )
+
+
 def canonical_request(method: str, path: str, body: str, query: str = "") -> str:
     """`METHOD + /{version}/{path} + ?query + body` for JSON and body-less requests."""
     return f"{method.upper()}{path}{normalize_query(query)}{body}"

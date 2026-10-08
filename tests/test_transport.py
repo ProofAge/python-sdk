@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 
 import httpx
@@ -43,6 +45,37 @@ def test_a_bodyless_request_sends_no_content_type(sdk: Harness, api: respx.MockR
     assert request.content == b""
     assert "Content-Type" not in request.headers
     assert request.headers["X-HMAC-Signature"] == sign(SECRET_KEY, "GET/v1/workspace")
+
+
+def test_a_query_is_sent_as_the_exact_string_signed(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/verifications").respond(200, json={"data": [], "next_cursor": None})
+    query = {"status": "approved,declined", "limit": 5, "external_id": "user 1/ä", "cursor": None}
+    sdk.call(lambda c: c._get("verifications", query))
+    request = route.calls.last.request
+    wire = "external_id=user%201%2F%C3%A4&limit=5&status=approved%2Cdeclined"
+    assert request.url.query == wire.encode()
+    canonical = f"GET/v1/verifications?{wire}"
+    assert canonical_request("GET", "/v1/verifications", "", wire) == canonical
+    expected = hmac.new(SECRET_KEY.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    assert request.headers["X-HMAC-Signature"] == expected
+
+
+def test_a_delete_is_not_retried_on_5xx(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.delete("/webhook-subscriptions/s1").respond(503)
+    with pytest.raises(ServerError):
+        sdk.call(lambda c: c._delete("webhook-subscriptions/s1"), retry_delay=0)
+    assert route.call_count == 1
+
+
+def test_a_delete_is_retried_on_429(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.delete("/webhook-subscriptions/s1").mock(
+        side_effect=[httpx.Response(429), httpx.Response(204)]
+    )
+    assert sdk.call(lambda c: c._delete("webhook-subscriptions/s1"), retry_delay=0) is None
+    assert route.call_count == 2
+    assert route.calls.last.request.headers["X-HMAC-Signature"] == sign(
+        SECRET_KEY, "DELETE/v1/webhook-subscriptions/s1"
+    )
 
 
 def test_multipart_sends_the_strings_it_signed(sdk: Harness, api: respx.MockRouter) -> None:

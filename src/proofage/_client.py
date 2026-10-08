@@ -88,14 +88,17 @@ class ProofAge:
     ) -> None:
         self.close()
 
-    def _get(self, endpoint: str) -> Any:
-        return self._send(prepare_json(self._config, "GET", endpoint), expect_body=True)
+    def _get(self, endpoint: str, query: Mapping[str, Any] | None = None) -> Any:
+        prepared = prepare_json(self._config, "GET", endpoint, query=query)
+        return self._send(prepared, expect_body=True)
 
     def _post(self, endpoint: str, payload: Mapping[str, Any]) -> Any:
         return self._send(prepare_json(self._config, "POST", endpoint, payload), expect_body=True)
 
-    def _get_model(self, endpoint: str, model: type[M]) -> M:
-        data = self._get(endpoint)
+    def _get_model(
+        self, endpoint: str, model: type[M], query: Mapping[str, Any] | None = None
+    ) -> M:
+        data = self._get(endpoint, query)
         return parse_model(model, data, f"GET {api_path(self._config, endpoint)}")
 
     def _post_model(self, endpoint: str, payload: Mapping[str, Any], model: type[M]) -> M:
@@ -104,6 +107,9 @@ class ProofAge:
 
     def _post_empty(self, endpoint: str, payload: Mapping[str, Any] | None = None) -> None:
         self._send(prepare_json(self._config, "POST", endpoint, payload), expect_body=False)
+
+    def _delete(self, endpoint: str) -> None:
+        self._send(prepare_json(self._config, "DELETE", endpoint), expect_body=False)
 
     def _post_multipart(
         self, endpoint: str, fields: Mapping[str, Any], *, filename: str, content: bytes

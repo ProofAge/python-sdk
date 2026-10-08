@@ -4,10 +4,12 @@ import base64
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qsl
 
 import pytest
 
 from proofage._signing import (
+    build_query,
     canonical_multipart_request,
     canonical_request,
     rawurlencode,
@@ -46,6 +48,22 @@ def test_multipart_vectors(vector: dict[str, Any]) -> None:
 def test_webhook_vectors(vector: dict[str, Any]) -> None:
     payload = vector["payload"].encode("utf-8")
     assert webhook_signature(SECRET, vector["timestamp"], payload) == vector["expected"]
+
+
+def test_built_query_is_already_normalised() -> None:
+    for vector in VECTORS["json"]:
+        if not vector.get("query"):
+            continue
+        built = build_query(dict(parse_qsl(vector["query"], keep_blank_values=True)))
+        canonical = canonical_request(vector["method"], vector["path"], vector["body"], built)
+        assert canonical == vector["canonical"]
+        assert canonical == f"{vector['method']}{vector['path']}?{built}{vector['body']}"
+
+
+def test_build_query_drops_none_and_sorts() -> None:
+    query = build_query({"status": "approved,declined", "cursor": None, "limit": 20, "flag": True})
+    assert query == "flag=1&limit=20&status=approved%2Cdeclined"
+    assert build_query({}) == ""
 
 
 def test_rawurlencode_matches_php() -> None:

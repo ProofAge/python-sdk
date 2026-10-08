@@ -21,6 +21,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from ._config import SDK_HEADER, ClientConfig
 from ._signing import (
+    build_query,
     canonical_multipart_request,
     canonical_request,
     serialize_json_body,
@@ -175,18 +176,27 @@ def prepare_json(
     endpoint: str,
     payload: Mapping[str, Any] | None = None,
     *,
+    query: Mapping[str, Any] | None = None,
     accept: str = "application/json",
 ) -> PreparedRequest:
-    """Serialise once, sign those bytes, send those bytes."""
+    """Serialise once, sign those bytes, send those bytes.
+
+    The query string is built here, already in the server's normalised form (keys sorted,
+    RFC 3986), and sent as that exact string: httpx's `params=` would encode it differently.
+    """
     path = api_path(config, endpoint)
+    query_string = build_query(query or {})
     body = serialize_json_body(payload or {})
     headers = _base_headers(config, accept)
-    headers["X-HMAC-Signature"] = sign(config.secret_key, canonical_request(method, path, body))
+    headers["X-HMAC-Signature"] = sign(
+        config.secret_key, canonical_request(method, path, body, query_string)
+    )
     content: bytes | None = None
     if body:
         headers["Content-Type"] = "application/json"
         content = body.encode("utf-8")
-    return PreparedRequest(method.upper(), config.base_url + path, headers, content=content)
+    url = config.base_url + path + (f"?{query_string}" if query_string else "")
+    return PreparedRequest(method.upper(), url, headers, content=content)
 
 
 def prepare_multipart(
@@ -216,14 +226,15 @@ def prepare_multipart(
 
 
 def is_retryable_status(method: str, status: int) -> bool:
-    """GET: 408, 429, 5xx. POST: only 429, which the rate limiter answers before anything runs."""
+    """GET: 408, 429, 5xx. POST and DELETE: only 429, which the rate limiter answers before
+    anything runs."""
     if method.upper() in _IDEMPOTENT:
         return status in (408, 429) or 500 <= status < 600
     return status == 429
 
 
 def is_retryable_exception(method: str, exc: httpx.TransportError) -> bool:
-    """GET: any transport failure. POST: only failures before a byte was sent."""
+    """GET: any transport failure. POST and DELETE: only failures before a byte was sent."""
     if method.upper() in _IDEMPOTENT:
         return True
     return isinstance(exc, _NEVER_SENT)

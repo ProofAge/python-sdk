@@ -89,15 +89,18 @@ class AsyncProofAge:
     ) -> None:
         await self.aclose()
 
-    async def _get(self, endpoint: str) -> Any:
-        return await self._send(prepare_json(self._config, "GET", endpoint), expect_body=True)
+    async def _get(self, endpoint: str, query: Mapping[str, Any] | None = None) -> Any:
+        prepared = prepare_json(self._config, "GET", endpoint, query=query)
+        return await self._send(prepared, expect_body=True)
 
     async def _post(self, endpoint: str, payload: Mapping[str, Any]) -> Any:
         prepared = prepare_json(self._config, "POST", endpoint, payload)
         return await self._send(prepared, expect_body=True)
 
-    async def _get_model(self, endpoint: str, model: type[M]) -> M:
-        data = await self._get(endpoint)
+    async def _get_model(
+        self, endpoint: str, model: type[M], query: Mapping[str, Any] | None = None
+    ) -> M:
+        data = await self._get(endpoint, query)
         return parse_model(model, data, f"GET {api_path(self._config, endpoint)}")
 
     async def _post_model(self, endpoint: str, payload: Mapping[str, Any], model: type[M]) -> M:
@@ -107,6 +110,9 @@ class AsyncProofAge:
     async def _post_empty(self, endpoint: str, payload: Mapping[str, Any] | None = None) -> None:
         prepared = prepare_json(self._config, "POST", endpoint, payload)
         await self._send(prepared, expect_body=False)
+
+    async def _delete(self, endpoint: str) -> None:
+        await self._send(prepare_json(self._config, "DELETE", endpoint), expect_body=False)
 
     async def _post_multipart(
         self, endpoint: str, fields: Mapping[str, Any], *, filename: str, content: bytes
