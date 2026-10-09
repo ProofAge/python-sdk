@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## 0.9.0 — 2026-10-09
+
+- **Changed:** the default `base_url` is `https://api.proofage.net`, where ProofAge moved on
+  9 October 2026. `https://api.proofage.xyz` keeps answering the same API with the same keys and
+  signatures, so a client that pins `base_url` (or `PROOFAGE_BASE_URL`) to it keeps working. No
+  other behaviour changes.
+- **Changed:** the bundled `openapi.json` is synced from `https://docs.proofage.net/openapi.json`,
+  which `scripts/sync_spec.py` now reads by default; the only differences are the hostnames.
+
 ## 0.8.0 — 2026-10-09
 
 - **Added:** `client.verifications.list(status=, external_id=, limit=, cursor=)` → `VerificationList`

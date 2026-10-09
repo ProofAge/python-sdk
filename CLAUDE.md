@@ -13,7 +13,7 @@ Steps: edit `src/proofage/_version.py` and the CHANGELOG heading → commit
 ## Changing the API surface
 
 The API change checklist for every client lives in `.ai/guidelines/api-changes.md` in the app repo (`ProofAge/web-app`). Here:
-`uv run python scripts/sync_spec.py` (reads `https://docs.proofage.xyz/openapi.json`; set
+`uv run python scripts/sync_spec.py` (reads `https://docs.proofage.net/openapi.json`; set
 `PROOFAGE_OPENAPI_SRC` to the docs checkout's `openapi.json` for a spec that is not published yet),
 then make
 `tests/test_api_contract.py` pass by updating `OPERATIONS`, the resource methods, the models

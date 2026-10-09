@@ -50,7 +50,7 @@ VERIFICATION: dict[str, Any] = {
     "consent_accepted_at": "2026-09-28T12:00:00.000000Z",
     "created_at": "2026-09-28T11:59:00.000000Z",
     "updated_at": "2026-09-28T12:05:00.000000Z",
-    "url": "https://idv.proofage.xyz/v/token",
+    "url": "https://idv.proofage.net/v/token",
 }
 
 

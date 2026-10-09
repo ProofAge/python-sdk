@@ -237,7 +237,7 @@ recognise raises `ProofAgeError` naming the fields (never their values).
 |---|---|---|
 | `api_key` | `PROOFAGE_API_KEY` | required |
 | `secret_key` | `PROOFAGE_SECRET_KEY` | required |
-| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.xyz` |
+| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.net` |
 | `version` | `PROOFAGE_VERSION` | `v1` |
 | `timeout` | `PROOFAGE_TIMEOUT` (seconds) | `30.0` |
 | `retry_attempts` | `PROOFAGE_RETRY_ATTEMPTS` | `3` |

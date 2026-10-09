@@ -133,7 +133,7 @@ def decode_success(
         raise ProofAgeError(
             f"Expected a JSON response from {url} but got HTTP {status} with a non-JSON body "
             f"(Content-Type: {content_type or 'unknown'}). Check that base_url is the API "
-            "origin, e.g. https://api.proofage.xyz",
+            "origin, e.g. https://api.proofage.net",
             status_code=status,
             response_body=text,
         ) from exc

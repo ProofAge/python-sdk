@@ -23,7 +23,7 @@ SDK's units**, so one `.env` serves both; constructor arguments are seconds as f
 |---|---|---|---|
 | `api_key` | `PROOFAGE_API_KEY` | required | Workspace API key |
 | `secret_key` | `PROOFAGE_SECRET_KEY` | required | Used only to sign; never sent, never in `repr` |
-| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.xyz` | API origin without the version; a trailing `/v1` is stripped; a non-http(s) URL, a query or a fragment raises `ConfigurationError` |
+| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.net` | API origin without the version; a trailing `/v1` is stripped; a non-http(s) URL, a query or a fragment raises `ConfigurationError` |
 | `version` | `PROOFAGE_VERSION` | `v1` | |
 | `timeout` | `PROOFAGE_TIMEOUT` (seconds) | `30.0` | httpx per-operation timeout (connect, each read, each write), not a deadline for the whole request. Node reads this variable in milliseconds |
 | `retry_attempts` | `PROOFAGE_RETRY_ATTEMPTS` | `3` | Attempts for interactive requests |

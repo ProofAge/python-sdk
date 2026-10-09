@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from ._version import __version__
 from .errors import ConfigurationError
 
-DEFAULT_BASE_URL = "https://api.proofage.xyz"
+DEFAULT_BASE_URL = "https://api.proofage.net"
 DEFAULT_VERSION = "v1"
 SDK_HEADER = "X-ProofAge-Sdk"
 OWN_TOKEN_NAME = "python"

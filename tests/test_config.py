@@ -37,7 +37,7 @@ def config(**overrides: Any) -> Any:
 
 def test_defaults() -> None:
     c = config()
-    assert c.base_url == "https://api.proofage.xyz"
+    assert c.base_url == "https://api.proofage.net"
     assert c.version == "v1"
     assert c.timeout == 30.0
     assert c.retry_attempts == 3
@@ -99,10 +99,10 @@ def test_out_of_range_numbers_are_refused(overrides: dict[str, Any]) -> None:
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("https://api.proofage.xyz", "https://api.proofage.xyz"),
-        ("https://api.proofage.xyz/", "https://api.proofage.xyz"),
-        ("https://api.proofage.xyz/v1", "https://api.proofage.xyz"),
-        ("https://api.proofage.xyz/v1/", "https://api.proofage.xyz"),
+        ("https://api.proofage.net", "https://api.proofage.net"),
+        ("https://api.proofage.net/", "https://api.proofage.net"),
+        ("https://api.proofage.net/v1", "https://api.proofage.net"),
+        ("https://api.proofage.net/v1/", "https://api.proofage.net"),
         ("http://localhost:8000/proxy", "http://localhost:8000/proxy"),
     ],
 )
@@ -113,10 +113,10 @@ def test_base_url_normalisation(raw: str, expected: str) -> None:
 @pytest.mark.parametrize(
     "raw",
     [
-        "api.proofage.xyz",
-        "ftp://api.proofage.xyz",
-        "https://api.proofage.xyz?x=1",
-        "https://api.proofage.xyz#frag",
+        "api.proofage.net",
+        "ftp://api.proofage.net",
+        "https://api.proofage.net?x=1",
+        "https://api.proofage.net#frag",
     ],
 )
 def test_unusable_base_urls_are_refused(raw: str) -> None:
