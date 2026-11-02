@@ -4,6 +4,11 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## 0.9.1 — 2026-11-02
+
+- **Changed:** the package metadata (`Homepage`, author e-mail) and the README link to
+  `proofage.net`. No code changes.
+
 ## 0.9.0 — 2026-10-09
 
 - **Changed:** the default `base_url` is `https://api.proofage.net`, where ProofAge moved on
