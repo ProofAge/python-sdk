@@ -106,5 +106,5 @@ def test_success_without_a_body_raises_where_a_model_is_promised() -> None:
 def test_html_success_points_at_the_base_url() -> None:
     with pytest.raises(ProofAgeError, match="base_url is the API origin"):
         decode_success(
-            200, "<html></html>", "https://proofage.xyz/v1/workspace", "text/html", expect_body=True
+            200, "<html></html>", "https://proofage.net/v1/workspace", "text/html", expect_body=True
         )

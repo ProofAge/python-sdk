@@ -1,6 +1,6 @@
 # proofage — ProofAge for Python
 
-Python client for [ProofAge](https://proofage.xyz), the age and identity verification API. It
+Python client for [ProofAge](https://proofage.net), the age and identity verification API. It
 gives you a sync and an async client for every `/v1` endpoint, typed Pydantic models, typed errors
 and webhook verification — enough to go from `pip install` to a verified result in a few minutes,
 from a backend, a Telegram bot or an AI agent.

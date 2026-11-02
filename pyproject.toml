@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-authors = [{ name = "ProofAge", email = "support@proofage.xyz" }]
+authors = [{ name = "ProofAge", email = "support@proofage.net" }]
 keywords = ["age verification", "identity verification", "kyc", "proofage", "webhooks"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -37,7 +37,7 @@ django = ["django>=5.2"]
 flask = ["flask>=3.0"]
 
 [project.urls]
-Homepage = "https://proofage.xyz"
+Homepage = "https://proofage.net"
 Repository = "https://github.com/ProofAge/python-sdk"
 Changelog = "https://github.com/ProofAge/python-sdk/blob/main/CHANGELOG.md"
 

@@ -121,7 +121,7 @@ Configuration, resolved argument → environment variable → default. The envir
 |---|---|---|---|
 | `api_key` | `PROOFAGE_API_KEY` | required | Workspace API key |
 | `secret_key` | `PROOFAGE_SECRET_KEY` | required | Used only to sign; never sent |
-| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.xyz` | API origin **without** the version; a trailing `/v1` (as in the OpenAPI `servers` entry) is stripped; anything that is not an absolute http(s) URL, or carries a query or fragment, raises at construction |
+| `base_url` | `PROOFAGE_BASE_URL` | `https://api.proofage.net` | API origin **without** the version; a trailing `/v1` (as in the OpenAPI `servers` entry) is stripped; anything that is not an absolute http(s) URL, or carries a query or fragment, raises at construction |
 | `version` | `PROOFAGE_VERSION` | `v1` | |
 | `timeout` | `PROOFAGE_TIMEOUT` (seconds, as in Laravel) | `30.0` | Seconds, passed to httpx as `httpx.Timeout(timeout)`: a limit on **each operation** (connect, each read, each write, pool), not a deadline for the whole request, so a slowly trickling response can take longer. The README says so. (Node reads this variable in milliseconds; the Laravel/PHP unit is the one followed here, and the README names the clash.) |
 | `retry_attempts` | `PROOFAGE_RETRY_ATTEMPTS` | `3` | Attempts for interactive requests (§5) |
