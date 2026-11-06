@@ -56,6 +56,23 @@ class BlockFaceReasonCode(_ApiEnum):
     OTHER = "other"
 
 
+class ErasureReasonCode(_ApiEnum):
+    """Why `verifications.erase_personal_data()` is asked for.
+
+    `data_subject_request`: the verified person exercised their right to erasure.
+    `customer_request`: you are erasing it on your own initiative, not the person's.
+    `retention_policy`: your retention window elapsed.
+    `test_data`: the session was a test or a synthetic run, not a real person.
+    `other`: anything else; explain it in `reason`, which `other` requires.
+    """
+
+    DATA_SUBJECT_REQUEST = "data_subject_request"
+    CUSTOMER_REQUEST = "customer_request"
+    RETENTION_POLICY = "retention_policy"
+    TEST_DATA = "test_data"
+    OTHER = "other"
+
+
 class VerificationOutcome(_ApiEnum):
     """The outcomes `verifications.set_test_outcome()` can set, in a test workspace only."""
 

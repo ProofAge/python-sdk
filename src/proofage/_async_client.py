@@ -116,6 +116,11 @@ class AsyncProofAge:
     async def _delete(self, endpoint: str) -> None:
         await self._send(prepare_json(self._config, "DELETE", endpoint), expect_body=False)
 
+    async def _delete_model(self, endpoint: str, payload: Mapping[str, Any], model: type[M]) -> M:
+        prepared = prepare_json(self._config, "DELETE", endpoint, payload)
+        data = await self._send(prepared, expect_body=True)
+        return parse_model(model, data, f"DELETE {api_path(self._config, endpoint)}")
+
     async def _post_multipart(
         self, endpoint: str, fields: Mapping[str, Any], *, filename: str, content: bytes
     ) -> None:

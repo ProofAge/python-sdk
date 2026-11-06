@@ -18,6 +18,7 @@ from ..models import (
     AgeEstimation,
     BlockFaceReasonCode,
     CreatedVerification,
+    ErasureReasonCode,
     Verification,
     VerificationDocument,
     VerificationList,
@@ -176,6 +177,30 @@ class Verifications:
         """`POST /verifications/{id}/blocked-face`. Irreversible for the person."""
         payload = compact({"reason_code": reason_code, "reason": reason})
         self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
+
+    def erase_personal_data(
+        self,
+        verification_id: str,
+        *,
+        reason_code: ErasureReasonCode | str,
+        reason: str | None = None,
+    ) -> Verification:
+        """`DELETE /verifications/{id}/personal-data`. Irreversible.
+
+        Erases the verification's images, recordings, document fields, analysis results and
+        device data; the status, reason, dates and the fact of the erasure stay, and no webhook is
+        sent. Returns the verification, as `get()` does, with its `erasure` block. Only
+        `approved`, `declined`, `abandoned` and `expired` verifications can be erased; a repeat
+        call on an erased one returns it again. `reason` (at most 1000 characters) is required
+        when `reason_code` is `other`.
+
+        A 409 (`VERIFICATION_PROCESSING`, `ERASURE_IN_PROGRESS`) or a 503 (`ERASURE_FAILED`,
+        nothing erased) is not retried: call again after about 3 seconds. Only a 429 is retried.
+        """
+        payload = compact({"reason_code": reason_code, "reason": reason})
+        return self._client._delete_model(
+            verification_path(verification_id, "/personal-data"), payload, Verification
+        )
 
     def set_test_outcome(
         self,
@@ -408,6 +433,19 @@ class AsyncVerifications:
         """`POST /verifications/{id}/blocked-face`. Irreversible for the person."""
         payload = compact({"reason_code": reason_code, "reason": reason})
         await self._client._post_empty(verification_path(verification_id, "/blocked-face"), payload)
+
+    async def erase_personal_data(
+        self,
+        verification_id: str,
+        *,
+        reason_code: ErasureReasonCode | str,
+        reason: str | None = None,
+    ) -> Verification:
+        """`DELETE /verifications/{id}/personal-data`. Irreversible (see the sync twin)."""
+        payload = compact({"reason_code": reason_code, "reason": reason})
+        return await self._client._delete_model(
+            verification_path(verification_id, "/personal-data"), payload, Verification
+        )
 
     async def set_test_outcome(
         self,

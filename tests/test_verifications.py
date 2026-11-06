@@ -13,7 +13,13 @@ import pytest
 import respx
 
 from proofage import ProofAge
-from proofage.errors import PermissionDeniedError, ServerError, ValidationError
+from proofage.errors import (
+    PermissionDeniedError,
+    ProofAgeError,
+    ServerError,
+    TransportError,
+    ValidationError,
+)
 from proofage.models import (
     AcceptConsentResult,
     AgeEstimation,
@@ -21,6 +27,7 @@ from proofage.models import (
     CreatedVerification,
     DocumentGender,
     DocumentResultType,
+    ErasureReasonCode,
     Verification,
     VerificationDocument,
     VerificationList,
@@ -311,6 +318,156 @@ def test_list_is_retried_on_5xx(sdk: Harness, api: respx.MockRouter) -> None:
     sdk.call(lambda c: c.verifications.list(limit=1), retry_delay=0)
     assert route.call_count == 2
     assert route.calls.last.request.url.query == b"limit=1"
+
+
+ERASED_PAYLOAD = {
+    **GET_PAYLOAD,
+    "external_id": None,
+    "external_metadata": None,
+    "erasure": {
+        "erased_at": "2026-11-06T12:00:00+00:00",
+        "scope": "personal_data",
+        "reason": "customer_request",
+        "requested_via": "customer",
+    },
+}
+ERASE_PATH = f"/verifications/{VID}/personal-data"
+
+
+def test_erase_personal_data_sends_a_signed_delete_with_the_reason(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.delete(ERASE_PATH).respond(200, json=ERASED_PAYLOAD)
+    verification = sdk.call(
+        lambda c: c.verifications.erase_personal_data(
+            VID,
+            reason_code=ErasureReasonCode.CUSTOMER_REQUEST,
+            reason="one-time public demo session",
+        )
+    )
+    assert type(verification) is Verification
+    assert verification.erasure is not None
+    assert verification.erasure.scope == "personal_data"
+    assert verification.erasure.reason == "customer_request"
+    assert verification.erasure.requested_via == "customer"
+    request = route.calls.last.request
+    assert request.method == "DELETE"
+    assert request.headers["Content-Type"] == "application/json"
+    assert body(route) == {
+        "reason_code": "customer_request",
+        "reason": "one-time public demo session",
+    }
+    assert request.headers["X-HMAC-Signature"] == sign_raw(
+        f"DELETE/v1{ERASE_PATH}{request.content.decode()}"
+    )
+
+
+def test_erase_personal_data_sends_only_the_reason_code_when_no_reason(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.delete(ERASE_PATH).respond(200, json=ERASED_PAYLOAD)
+    sdk.call(lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"))
+    assert route.calls.last.request.content == b'{"reason_code":"test_data"}'
+
+
+@pytest.mark.parametrize("code", ["VERIFICATION_PROCESSING", "ERASURE_IN_PROGRESS"])
+def test_erase_personal_data_is_not_retried_on_409(
+    sdk: Harness, api: respx.MockRouter, code: str
+) -> None:
+    route = api.delete(ERASE_PATH).respond(
+        409, headers={"Retry-After": "3"}, json={"error": {"code": code, "message": "Retry."}}
+    )
+    with pytest.raises(ProofAgeError) as caught:
+        sdk.call(
+            lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"),
+            retry_delay=0,
+        )
+    assert caught.value.status_code == 409
+    assert caught.value.code == code
+    assert route.call_count == 1
+    assert sdk.sleeps == []
+
+
+def test_erase_personal_data_is_not_retried_on_503(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.delete(ERASE_PATH).respond(
+        503,
+        headers={"Retry-After": "3"},
+        json={"error": {"code": "ERASURE_FAILED", "message": "Nothing was erased."}},
+    )
+    with pytest.raises(ServerError) as caught:
+        sdk.call(
+            lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"),
+            retry_delay=0,
+        )
+    assert caught.value.code == "ERASURE_FAILED"
+    assert route.call_count == 1
+
+
+def test_erase_personal_data_is_not_retried_once_sending_began(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.delete(ERASE_PATH).mock(side_effect=httpx.ReadTimeout("slow"))
+    with pytest.raises(TransportError):
+        sdk.call(
+            lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"),
+            retry_delay=0,
+        )
+    assert route.call_count == 1
+
+
+def test_erase_personal_data_is_retried_on_429(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.delete(ERASE_PATH).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "1"}),
+            httpx.Response(200, json=ERASED_PAYLOAD),
+        ]
+    )
+    verification = sdk.call(
+        lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"),
+        retry_delay=0,
+    )
+    assert verification.erasure is not None
+    assert route.call_count == 2
+    assert sdk.sleeps == [1.0]
+    first, second = (call.request for call in route.calls)
+    assert first.content == second.content
+    assert first.headers["X-HMAC-Signature"] == second.headers["X-HMAC-Signature"]
+
+
+def test_erase_personal_data_of_a_verification_not_final(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    api.delete(ERASE_PATH).respond(
+        422,
+        json={"error": {"code": "VERIFICATION_NOT_FINAL", "message": "Not final yet."}},
+    )
+    with pytest.raises(ValidationError) as caught:
+        sdk.call(lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"))
+    assert caught.value.code == "VERIFICATION_NOT_FINAL"
+
+
+def test_erase_personal_data_with_an_invalid_reason(sdk: Harness, api: respx.MockRouter) -> None:
+    api.delete(ERASE_PATH).respond(
+        422,
+        json={
+            "error": {"code": "VALIDATION_ERROR", "message": "The reason field is required."},
+            "errors": {"reason": ["The reason field is required when reason code is other."]},
+        },
+    )
+    with pytest.raises(ValidationError) as caught:
+        sdk.call(lambda c: c.verifications.erase_personal_data(VID, reason_code="other"))
+    assert caught.value.code == "VALIDATION_ERROR"
+    assert list(caught.value.errors) == ["reason"]
+
+
+def test_erase_personal_data_of_another_workspace(sdk: Harness, api: respx.MockRouter) -> None:
+    api.delete(ERASE_PATH).respond(
+        403,
+        json={"error": {"code": "VERIFICATION_MISMATCH", "message": "Not in this workspace."}},
+    )
+    with pytest.raises(PermissionDeniedError) as caught:
+        sdk.call(lambda c: c.verifications.erase_personal_data(VID, reason_code="test_data"))
+    assert caught.value.code == "VERIFICATION_MISMATCH"
 
 
 def test_set_test_outcome(sdk: Harness, api: respx.MockRouter) -> None:
