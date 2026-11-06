@@ -16,6 +16,7 @@ from proofage.models import (
     BlockFaceReasonCode,
     ConsentInfo,
     CreatedVerification,
+    ErasureReasonCode,
     Verification,
     VerificationDocument,
     VerificationList,
@@ -93,6 +94,12 @@ OPERATIONS: dict[str, Operation] = {
     ),
     "verifications.block_face": Operation(
         "POST", "/verifications/{verification}/blocked-face", ("reason", "reason_code"), None
+    ),
+    "verifications.erase_personal_data": Operation(
+        "DELETE",
+        "/verifications/{verification}/personal-data",
+        ("reason", "reason_code"),
+        Verification,
     ),
     "verifications.set_test_outcome": Operation(
         "POST", "/verifications/{verification}/test-outcome", ("status", "reason"), Verification
@@ -215,6 +222,7 @@ def test_response_models_match_the_spec_where_it_describes_them() -> None:
         "verifications.accept_consent",
         "verifications.create",
         "verifications.document",
+        "verifications.erase_personal_data",
         "verifications.estimation",
         "verifications.get",
         "verifications.list",
@@ -269,6 +277,12 @@ def request_enum(path: str, method_name: str, field: str) -> list[str]:
     name = body["schema"]["$ref"].rsplit("/", 1)[-1]
     schema = SPEC["components"]["schemas"][name]["properties"][field]
     return sorted(schema.get("items", schema)["enum"])
+
+
+def test_erasure_reason_codes_match_the_api() -> None:
+    body = SPEC["components"]["schemas"]["ErasePersonalDataRequest"]["properties"]["reason_code"]
+    enum = SPEC["components"]["schemas"][body["$ref"].rsplit("/", 1)[-1]]["enum"]
+    assert enum == [code.value for code in ErasureReasonCode]
 
 
 def test_test_outcomes_match_the_api() -> None:

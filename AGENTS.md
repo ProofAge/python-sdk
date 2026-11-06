@@ -43,19 +43,22 @@ raw `response_body`:
 ProofAgeError
 ├── AuthenticationError     401
 ├── PaymentRequiredError    402  code PAYMENT_METHOD_REQUIRED; error_data has free_verifications_remaining, trial_ends_at, trial_active
-├── PermissionDeniedError   403  code TEST_WORKSPACE_ONLY from set_test_outcome() in a live workspace
+├── PermissionDeniedError   403  code TEST_WORKSPACE_ONLY from set_test_outcome() in a live workspace; VERIFICATION_MISMATCH from erase_personal_data()
 ├── NotFoundError           404
-├── ValidationError         422  .errors: dict[str, list[str]]; media rejections carry .code (e.g. FACE_NOT_FOUND); also INVALID_STATUS, WEBHOOK_SUBSCRIPTION_LIMIT
+├── ValidationError         422  .errors: dict[str, list[str]]; media rejections carry .code (e.g. FACE_NOT_FOUND); also INVALID_STATUS, WEBHOOK_SUBSCRIPTION_LIMIT, VERIFICATION_NOT_FINAL, VALIDATION_ERROR
 ├── RateLimitError          429  .retry_after: float | None, raised after the retries run out
-├── ServerError             5xx
+├── ServerError             5xx  code ERASURE_FAILED (503) from erase_personal_data()
 └── TransportError          no response (DNS, connection, TLS, timeout); __cause__ is the httpx exception
 ConfigurationError           raised when a client is built
 WebhookVerificationError     see "Outbound webhook"
 ```
 
+A status without its own class (such as `409` from `erase_personal_data()`) raises `ProofAgeError`
+itself; read `status_code` and `code`.
+
 The API uses four error body shapes; the client reads all of them:
 
-- `{ error: { code, message } }` — most errors (401 auth, 429 `RATE_LIMIT`, submit 422, media download 404, test outcome 403 `TEST_WORKSPACE_ONLY` and 422 `INVALID_STATUS`, subscription 422 `WEBHOOK_SUBSCRIPTION_LIMIT`). `error_data` is the inner object.
+- `{ error: { code, message } }` — most errors (401 auth, 429 `RATE_LIMIT`, submit 422, media download 404, test outcome 403 `TEST_WORKSPACE_ONLY` and 422 `INVALID_STATUS`, subscription 422 `WEBHOOK_SUBSCRIPTION_LIMIT`, and on an erasure 403 `VERIFICATION_MISMATCH`, 409 `VERIFICATION_PROCESSING` / `ERASURE_IN_PROGRESS`, 422 `VERIFICATION_NOT_FINAL` and 503 `ERASURE_FAILED`; an erasure's 422 `VALIDATION_ERROR` also carries `errors`). `error_data` is the inner object.
 - `{ code, message, ...extra }` — flat: `402 PAYMENT_METHOD_REQUIRED` (extra: `free_verifications_remaining`, `trial_ends_at`, `trial_active`) and media-quality rejections on upload (`422`, e.g. `FACE_NOT_FOUND`; `500 VALIDATION_SERVICE_UNAVAILABLE`). `error_data` is the whole body.
 - `{ message, errors }` — request validation (`422`). `code` is `None`; `errors` has the fields.
 - `{ message }` — `403` (verification not in your workspace) and `404` (`Resource not found`, also an unknown webhook subscription).
@@ -68,7 +71,7 @@ Retries: GETs retry on 408, 429, 5xx, timeouts and transport errors. POSTs and D
 **only** on 429 and on errors raised before anything was sent (`httpx.ConnectError`,
 `httpx.ConnectTimeout`) — never on 5xx or after sending began (`WriteError`, `WriteTimeout`,
 `ReadError`, `ReadTimeout`, `RemoteProtocolError`), where the server may already have created the
-verification or subscription, stored the upload or set the outcome. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, up to 60 seconds —
+verification or subscription, stored the upload, set the outcome or erased the verification. A 429 waits for `Retry-After` (seconds or an HTTP date) when present, up to 60 seconds —
 a longer one raises `RateLimitError` at once with `retry_after` set — else `retry_delay * attempt`.
 A 2xx whose body does not match the model raises `ProofAgeError` ("Unexpected response shape from
 GET /v1/..."), naming the fields but never their values.
@@ -160,6 +163,12 @@ Response: `{ verification_id: str, attempt_id: str|None, age_threshold: { minimu
 Request: `reason_code: BlockFaceReasonCode | str`, `reason: str(<=1000)`.
 Response: `204 No Content`.
 
+### DELETE /verifications/{verification}/personal-data — `client.verifications.erase_personal_data(verification_id, *, reason_code, reason=None)` → `Verification`
+Irreversibly erases the verification's personal data: images, recordings, document fields, analysis results and device data. The status, reason, dates, audit trail and the fact of the erasure stay. No webhook is sent. Afterwards `get()` carries `erasure: { erased_at, scope: "personal_data", reason, requested_via: "customer" }`, `document()` returns `None` fields and every media item with `url: None`, and the media download answers 404.
+Request: `reason_code: ErasureReasonCode | str` (required), `reason: str(<=1000)|None` (required when `reason_code` is `other`).
+Response: the `Verification`, as `get()` returns it, with its `erasure` block. A repeat call on an erased verification answers `200` with it again and changes nothing.
+Only `approved`, `declined`, `abandoned` and `expired` verifications can be erased. Errors: `422` `ValidationError` with `code == "VERIFICATION_NOT_FINAL"` for any other status, or `code == "VALIDATION_ERROR"` and `.errors` for a missing or unknown `reason_code` or `other` without a `reason`; `403` `PermissionDeniedError` with `code == "VERIFICATION_MISMATCH"` for another workspace's verification; `409` `ProofAgeError` (`status_code == 409`) with `code == "VERIFICATION_PROCESSING"` (the decision was made a moment ago and the pipeline is finishing) or `"ERASURE_IN_PROGRESS"` (another erasure of it is running), with `Retry-After: 3`; `503` `ServerError` with `code == "ERASURE_FAILED"` and `Retry-After: 3` (deleting the stored files failed, the erasure was rolled back and nothing was erased; safe to call again). The SDK retries neither the 409 nor the 503: call again after about 3 seconds. Limited to 60 calls a minute per workspace (a 429 is retried).
+
 ### POST /verifications/{verification}/test-outcome — `client.verifications.set_test_outcome(verification_id, *, status, reason=None)` → `Verification`
 **Test workspaces only.** Finishes the verification with the given outcome without a person, so an integration's handling of each outcome can be tested end to end; the decision webhooks are sent as for a real outcome. A verification nobody opened is moved through `started` and `submitted` first. Works from `created`, `started`, `submitted`, `review` and `resubmission_requested`.
 Request: `status: VerificationOutcome | str` (`approved`, `declined`, `review`, `resubmission_requested`), `reason: str(<=1000)|None` — a note kept with a `resubmission_requested` outcome in the verification's history, **not** the decision `reason` code.
@@ -189,6 +198,7 @@ Every `verification_id`, `media_id` and `subscription_id` must be a ProofAge id 
 
 - `status` (`VerificationStatus`): `created`, `started`, `submitted`, `resubmission_requested`, `approved`, `declined`, `abandoned`, `expired`, `review`, or `documents_required` (the last is surfaced from the latest attempt's state, not a verification status). Open: an unknown value arrives as `str`.
 - `status` of `set_test_outcome()` (`VerificationOutcome`): `approved`, `declined`, `review`, `resubmission_requested`.
+- `reason_code` of `erase_personal_data()` (`ErasureReasonCode`): `data_subject_request` (the verified person asked for their data to be erased), `customer_request` (you are erasing it on your own initiative), `retention_policy` (your retention window elapsed), `test_data` (a test or synthetic session), `other` (explain in `reason`, which is then required).
 - `reason_code` (`BlockFaceReasonCode`): `presentation_attack` (spoof: screen, print or mask), `fraudulent_document` (forged, edited, or not a real document), `scam_or_abuse` (identity may be genuine — blocked for behaviour on your platform), `underage`, `other` (explain in `reason`). Optional over the API, mandatory in the ProofAge consoles: send it whenever a person made the decision, or the block cannot be told apart from an automated one in reporting.
 - `reason` (on `declined` / `resubmission_requested`): dotted codes from the server's reason catalog — illustrative examples: `aml.blocklist.face_match`, `document.face.mismatch`, `verification.age_threshold.failed`. Treat `reason` as an open string.
 
