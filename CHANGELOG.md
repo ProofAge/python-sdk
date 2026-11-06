@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.10.0 — 2026-11-06
 
 - **Added:** `client.verifications.erase_personal_data(verification_id, reason_code=, reason=)`
   → `Verification`, for `DELETE /v1/verifications/{id}/personal-data`: irreversibly erases the
