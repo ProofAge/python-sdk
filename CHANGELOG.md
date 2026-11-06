@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `client.verifications.erase_personal_data(verification_id, reason_code=, reason=)`
+  → `Verification`, for `DELETE /v1/verifications/{id}/personal-data`: irreversibly erases the
+  images, recordings, document fields, analysis results and device data of an `approved`,
+  `declined`, `abandoned` or `expired` verification and returns it with its `erasure` block. A
+  repeat call returns it again. `reason_code` takes the new `ErasureReasonCode` enum
+  (`data_subject_request`, `customer_request`, `retention_policy`, `test_data`, `other`; `other`
+  needs a `reason`). Like every DELETE it is retried only on 429: a `409`
+  (`VERIFICATION_PROCESSING`, `ERASURE_IN_PROGRESS`) raises `ProofAgeError` and a `503`
+  (`ERASURE_FAILED`, nothing erased) raises `ServerError` at once; call again after about 3 seconds.
+- **Changed:** the bundled `openapi.json` is synced with the erasure endpoint.
+
 ## 0.9.1 — 2026-11-02
 
 - **Changed:** the package metadata (`Homepage`, author e-mail) and the README link to

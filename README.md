@@ -176,6 +176,26 @@ events. Unless the subscription was created with `include_document_data=True`, t
 `document`, `fingerprint_signals` and `manual_moderation.performed_by`, so personal data stays out
 of the subscriber's logs.
 
+## Erasing personal data
+
+`erase_personal_data()` removes the images, recordings, document fields, analysis results and
+device data of an `approved`, `declined`, `abandoned` or `expired` verification, for example when
+the person asks for it. The status, dates and the fact of the erasure stay, and no webhook is sent:
+
+```python
+from proofage import ErasureReasonCode
+
+verification = client.verifications.erase_personal_data(
+    verification_id, reason_code=ErasureReasonCode.DATA_SUBJECT_REQUEST
+)
+verification.erasure  # erased_at, scope="personal_data", reason, requested_via="customer"
+```
+
+`reason_code` is `data_subject_request`, `customer_request`, `retention_policy`, `test_data` or
+`other`; `other` needs a `reason` (at most 1000 characters). A repeat call returns the verification
+again. A `409` (the decision is still being processed, or another erasure is running) or a `503`
+`ERASURE_FAILED` (nothing was erased) is not retried by the SDK: call again after about 3 seconds.
+
 ## Testing outcomes in a test workspace
 
 In a test workspace, `set_test_outcome()` finishes a verification without a person going through
