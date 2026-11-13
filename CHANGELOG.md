@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.11.0 — 2026-11-14
 
 - **Added:** face re-verification. `client.verifications.create(reference_verification_id=...)` takes
   the id of an approved, document-based verification of the same workspace; the person takes a selfie
