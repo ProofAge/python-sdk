@@ -61,10 +61,19 @@ class Verifications:
         external_id: str | None = None,
         external_metadata: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        reference_verification_id: str | None = None,
         fingerprint: str | None = None,
         page_url: str | None = None,
     ) -> CreatedVerification:
         """`POST /verifications`. Send the person to the returned `url`.
+
+        `reference_verification_id` makes the session a face re-verification: the id of an
+        approved, document-based verification of the same workspace. The person takes a selfie
+        only, it is compared with the face of that verification and decided on the spot. It is
+        not billed, it is taken in the hosted page, and the response and webhooks carry a
+        `reauth` block. A refusal raises: `NotFoundError` `REFERENCE_VERIFICATION_NOT_FOUND`,
+        `ValidationError` `REFERENCE_NOT_APPROVED`, `REFERENCE_NOT_SUPPORTED` or
+        `REFERENCE_UNAVAILABLE`, `RateLimitError` `REAUTH_RATE_LIMITED`.
 
         `fingerprint` and `page_url` are deprecated: the ProofAge widget sends them.
         """
@@ -75,6 +84,7 @@ class Verifications:
                 "external_id": external_id,
                 "external_metadata": external_metadata,
                 "metadata": metadata,
+                "reference_verification_id": reference_verification_id,
                 "fingerprint": fingerprint,
                 "page_url": page_url,
             }
@@ -317,10 +327,19 @@ class AsyncVerifications:
         external_id: str | None = None,
         external_metadata: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        reference_verification_id: str | None = None,
         fingerprint: str | None = None,
         page_url: str | None = None,
     ) -> CreatedVerification:
         """`POST /verifications`. Send the person to the returned `url`.
+
+        `reference_verification_id` makes the session a face re-verification: the id of an
+        approved, document-based verification of the same workspace. The person takes a selfie
+        only, it is compared with the face of that verification and decided on the spot. It is
+        not billed, it is taken in the hosted page, and the response and webhooks carry a
+        `reauth` block. A refusal raises: `NotFoundError` `REFERENCE_VERIFICATION_NOT_FOUND`,
+        `ValidationError` `REFERENCE_NOT_APPROVED`, `REFERENCE_NOT_SUPPORTED` or
+        `REFERENCE_UNAVAILABLE`, `RateLimitError` `REAUTH_RATE_LIMITED`.
 
         `fingerprint` and `page_url` are deprecated: the ProofAge widget sends them.
         """
@@ -331,6 +350,7 @@ class AsyncVerifications:
                 "external_id": external_id,
                 "external_metadata": external_metadata,
                 "metadata": metadata,
+                "reference_verification_id": reference_verification_id,
                 "fingerprint": fingerprint,
                 "page_url": page_url,
             }

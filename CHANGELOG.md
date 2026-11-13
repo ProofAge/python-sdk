@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** face re-verification. `client.verifications.create(reference_verification_id=...)` takes
+  the id of an approved, document-based verification of the same workspace; the person takes a selfie
+  only, it is compared 1:1 with that verification's face and decided automatically, and it is not
+  billed. `Verification.reauth` and `WebhookEvent.reauth` (a new `Reauth` model: `reference_verification_id`,
+  `reference_verified_at`, `similarity`) are set on re-verifications and `None` otherwise. The
+  refusals (`REFERENCE_VERIFICATION_NOT_FOUND`, `REFERENCE_NOT_APPROVED`, `REFERENCE_NOT_SUPPORTED`,
+  `REFERENCE_UNAVAILABLE`, `REAUTH_RATE_LIMITED`, and `REAUTH_HOSTED_ONLY` on the headless capture
+  calls) are documented in the README and `AGENTS.md`.
+- **Changed:** the bundled `openapi.json` is synced with the re-verification fields.
+
 ## 0.10.0 — 2026-11-06
 
 - **Added:** `client.verifications.erase_personal_data(verification_id, reason_code=, reason=)`

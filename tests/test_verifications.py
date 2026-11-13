@@ -14,8 +14,10 @@ import respx
 
 from proofage import ProofAge
 from proofage.errors import (
+    NotFoundError,
     PermissionDeniedError,
     ProofAgeError,
+    RateLimitError,
     ServerError,
     TransportError,
     ValidationError,
@@ -63,6 +65,70 @@ def test_create_sends_only_what_was_given(sdk: Harness, api: respx.MockRouter) -
         "external_id": "candidate-42",
         "external_metadata": {"email": "a@example.com"},
     }
+
+
+REAUTH = {
+    "reference_verification_id": "ver-kyc",
+    "reference_verified_at": "2026-05-02T10:14:00+00:00",
+    "similarity": None,
+}
+
+
+def test_create_a_face_reverification_sends_the_reference_and_parses_the_reauth_block(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").respond(201, json={**VERIFICATION, "reauth": REAUTH})
+    created = sdk.call(
+        lambda c: c.verifications.create(
+            external_id="student-42", reference_verification_id="ver-kyc"
+        )
+    )
+    assert body(route) == {"external_id": "student-42", "reference_verification_id": "ver-kyc"}
+    assert route.calls.last.request.headers["X-HMAC-Signature"]
+    assert created.reauth is not None
+    assert created.reauth.reference_verification_id == "ver-kyc"
+    assert created.reauth.reference_verified_at is not None
+    assert created.reauth.similarity is None
+
+
+def test_a_verification_without_reauth_has_none(sdk: Harness, api: respx.MockRouter) -> None:
+    api.post("/verifications").respond(201, json=VERIFICATION)
+    assert sdk.call(lambda c: c.verifications.create()).reauth is None
+
+
+@pytest.mark.parametrize(
+    ("status", "code", "error"),
+    [
+        (404, "REFERENCE_VERIFICATION_NOT_FOUND", NotFoundError),
+        (422, "REFERENCE_NOT_APPROVED", ValidationError),
+        (422, "REFERENCE_NOT_SUPPORTED", ValidationError),
+        (422, "REFERENCE_UNAVAILABLE", ValidationError),
+    ],
+)
+def test_a_refused_face_reverification_raises_with_its_code(
+    sdk: Harness, api: respx.MockRouter, status: int, code: str, error: type[ProofAgeError]
+) -> None:
+    route = api.post("/verifications").respond(
+        status, json={"error": {"code": code, "message": "Refused."}}
+    )
+    with pytest.raises(error) as caught:
+        sdk.call(lambda c: c.verifications.create(reference_verification_id="ver-kyc"))
+    assert caught.value.status_code == status
+    assert caught.value.code == code
+    assert route.call_count == 1
+
+
+def test_the_reauth_rate_limit_raises_a_rate_limit_error_with_its_code(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    api.post("/verifications").respond(
+        429, json={"error": {"code": "REAUTH_RATE_LIMITED", "message": "Too many."}}
+    )
+    with pytest.raises(RateLimitError) as caught:
+        sdk.call(
+            lambda c: c.verifications.create(reference_verification_id="ver-kyc"), retry_delay=0
+        )
+    assert caught.value.code == "REAUTH_RATE_LIMITED"
 
 
 def test_create_with_nothing_sends_no_body(sdk: Harness, api: respx.MockRouter) -> None:

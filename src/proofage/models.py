@@ -128,6 +128,23 @@ class Erasure(ProofAgeModel):
     requested_via: str | None
 
 
+class Reauth(ProofAgeModel):
+    """The `reauth` block of a face re-verification, in the API response and in the webhook.
+
+    Nothing of the reference verification's document is in it.
+    """
+
+    reference_verification_id: str | None
+    """The earlier approved document verification the face was compared with; None once
+    that verification is deleted."""
+    reference_verified_at: datetime | None
+    """When the reference verification was approved."""
+    similarity: float | None
+    """How alike the two faces are, 0 to 1; approved when it reaches the threshold (currently
+    0.65). None until the faces were compared, and for good when the liveness check failed first.
+    In a test workspace it is fixed and illustrative: 0.9 for `approved`, 0.3 for `declined`."""
+
+
 class Verification(ProofAgeModel):
     id: str
     external_id: str | None
@@ -140,6 +157,9 @@ class Verification(ProofAgeModel):
     consent_accepted_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    reauth: Reauth | None = None
+    """Only on a face re-verification (created with `reference_verification_id`); None on every
+    other verification."""
 
 
 class CreatedVerification(Verification):
@@ -324,6 +344,10 @@ class WebhookEvent(ProofAgeModel):
     """The object `verifications.document()` returns, without media, on every decision webhook.
     None on a body sent before it existed; the seven KYC-only keys are absent on age workspaces.
     On `data.updated` it holds the corrected values."""
+    reauth: Reauth | None = None
+    """Only on a face re-verification: which verification it re-checked and how alike the faces
+    were. Its `document` fields are all None and it has no `fingerprint_signals`. Webhook
+    subscriptions never receive a re-verification; the workspace webhook URL does."""
     changed_fields: list[str] | None = None
     """Only on `data.updated`: names of the document fields the correction changed, no values."""
     duplicate_detected: bool = False

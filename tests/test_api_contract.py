@@ -17,6 +17,7 @@ from proofage.models import (
     ConsentInfo,
     CreatedVerification,
     ErasureReasonCode,
+    Reauth,
     Verification,
     VerificationDocument,
     VerificationList,
@@ -55,7 +56,13 @@ OPERATIONS: dict[str, Operation] = {
     "verifications.create": Operation(
         "POST",
         "/verifications",
-        ("callback_url", "external_id", "external_metadata", "metadata"),
+        (
+            "callback_url",
+            "external_id",
+            "external_metadata",
+            "metadata",
+            "reference_verification_id",
+        ),
         CreatedVerification,
         "201",
     ),
@@ -302,3 +309,28 @@ def test_list_status_filter_names_only_known_statuses() -> None:
     for status in VerificationStatus:
         if status is not VerificationStatus.DOCUMENTS_REQUIRED:
             assert f"`{status.value}`" in parameter["description"]
+
+
+def test_the_reauth_block_is_described_as_the_models_have_it() -> None:
+    fields = ["reference_verification_id", "reference_verified_at", "similarity"]
+    schema = SPEC["paths"]["/verifications/{verification}"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]
+    assert schema["properties"]["reauth"]["type"] == "object"
+    assert list(schema["properties"]["reauth"]["properties"]) == fields
+    assert "reauth" not in schema["required"], "reauth is on re-verifications only"
+    assert sorted(Reauth.model_fields) == sorted(fields)
+
+    webhook = SPEC["webhooks"]["verificationDecision"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["schema"]
+    assert list(webhook["properties"]["reauth"]["properties"]) == fields
+
+
+def test_the_refusals_of_a_face_reverification_are_documented_on_create() -> None:
+    responses = SPEC["paths"]["/verifications"]["post"]["responses"]
+    assert "MISSING_SIGNATURE" in json.dumps(responses["401"])
+    assert "REFERENCE_VERIFICATION_NOT_FOUND" in json.dumps(responses["404"])
+    for code in ("REFERENCE_NOT_APPROVED", "REFERENCE_NOT_SUPPORTED", "REFERENCE_UNAVAILABLE"):
+        assert code in json.dumps(responses["422"])
+    assert "REAUTH_RATE_LIMITED" in json.dumps(responses["429"])

@@ -196,6 +196,32 @@ verification.erasure  # erased_at, scope="personal_data", reason, requested_via=
 again. A `409` (the decision is still being processed, or another erasure is running) or a `503`
 `ERASURE_FAILED` (nothing was erased) is not retried by the SDK: call again after about 3 seconds.
 
+## Face re-verification
+
+Check that the person in front of the camera is the one who passed an earlier ID verification, with a
+selfie only:
+
+```python
+created = client.verifications.create(
+    external_id="student-42",
+    reference_verification_id=kyc_verification_id,  # an approved document verification of the same workspace
+)
+# Send the person to created.url; the decision arrives by webhook.
+
+verification = client.verifications.get(created.id)
+verification.reauth  # reference_verification_id, reference_verified_at, similarity
+```
+
+The selfie is compared 1:1 with the reference's face and decided on the spot: `approved`, or
+`declined` with `reference.face.mismatch` (`reference.unavailable` if the reference was erased in the
+meantime). It is not billed, the person takes it in the hosted page (the headless consent, media and
+submit calls answer `409 REAUTH_HOSTED_ONLY`), and `reauth` is `None` on every other verification. A
+refusal raises: `NotFoundError` `REFERENCE_VERIFICATION_NOT_FOUND`, `ValidationError`
+`REFERENCE_NOT_APPROVED`, `REFERENCE_NOT_SUPPORTED` or `REFERENCE_UNAVAILABLE`, and `RateLimitError`
+`REAUTH_RATE_LIMITED` (more than 10 for one reference in 24 hours; it does not clear within seconds,
+so the SDK's automatic retries do not help). See the
+[Face re-verification guide](https://docs.proofage.net/integration/face-reverification).
+
 ## Testing outcomes in a test workspace
 
 In a test workspace, `set_test_outcome()` finishes a verification without a person going through

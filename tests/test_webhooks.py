@@ -125,6 +125,33 @@ def test_a_webhook_without_a_document_has_none() -> None:
     assert verify().document is None
 
 
+def test_a_face_reverification_webhook_carries_a_typed_reauth_block() -> None:
+    body = _signed(
+        {
+            **_BASE,
+            "status": "declined",
+            "external_id": "student-42",
+            "external_metadata": None,
+            "reason": "reference.face.mismatch",
+            "timestamp": "2026-11-13T09:02:00+00:00",
+            "reauth": {
+                "reference_verification_id": "ver-kyc",
+                "reference_verified_at": "2026-05-02T10:14:00+00:00",
+                "similarity": 0.31,
+            },
+        }
+    )
+    event = verify(body)
+    assert event.reauth is not None
+    assert event.reauth.reference_verification_id == "ver-kyc"
+    assert event.reauth.similarity == pytest.approx(0.31)
+    assert event.reason == "reference.face.mismatch"
+
+
+def test_an_ordinary_webhook_has_no_reauth_block() -> None:
+    assert verify().reauth is None
+
+
 def test_headers_are_case_insensitive() -> None:
     lowered = {k.lower(): v for k, v in headers().items()}
     assert verify(hdrs=lowered).external_id == "u-1"
