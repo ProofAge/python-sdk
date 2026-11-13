@@ -275,9 +275,18 @@ MAX_RETRY_AFTER = 60.0
 M = TypeVar("M", bound=BaseModel)
 
 
-def within_retry_after_cap(status: int, retry_after: float | None) -> bool:
-    """False when a 429's `Retry-After` is longer than the SDK will block a caller for."""
-    return not (status == 429 and retry_after is not None and retry_after > MAX_RETRY_AFTER)
+NOT_WORTH_RETRYING_429 = frozenset({"REAUTH_RATE_LIMITED"})
+"""429 codes that clear over hours, not seconds: waiting in-process cannot help."""
+
+
+def within_retry_after_cap(status: int, retry_after: float | None, text: str = "") -> bool:
+    """False when a 429 should be raised at once: its `Retry-After` is longer than the SDK
+    will block a caller for, or its code (`REAUTH_RATE_LIMITED`) says a retry cannot help."""
+    if status != 429:
+        return True
+    if retry_after is not None and retry_after > MAX_RETRY_AFTER:
+        return False
+    return parse_error_body(text)[1] not in NOT_WORTH_RETRYING_429
 
 
 def describe_validation_error(exc: PydanticValidationError) -> str:

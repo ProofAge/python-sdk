@@ -161,7 +161,7 @@ class AsyncProofAge:
             if (
                 not last
                 and is_retryable_status(prepared.method, response.status_code)
-                and within_retry_after_cap(response.status_code, retry_after)
+                and within_retry_after_cap(response.status_code, retry_after, response.text)
             ):
                 await self._sleep(
                     retry_delay(self._config, attempt, response.status_code, retry_after)

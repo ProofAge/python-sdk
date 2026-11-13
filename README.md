@@ -219,7 +219,7 @@ submit calls answer `409 REAUTH_HOSTED_ONLY`), and `reauth` is `None` on every o
 refusal raises: `NotFoundError` `REFERENCE_VERIFICATION_NOT_FOUND`, `ValidationError`
 `REFERENCE_NOT_APPROVED`, `REFERENCE_NOT_SUPPORTED` or `REFERENCE_UNAVAILABLE`, and `RateLimitError`
 `REAUTH_RATE_LIMITED` (more than 10 for one reference in 24 hours; it does not clear within seconds,
-so the SDK's automatic retries do not help). See the
+so the SDK raises it at once and does not retry it). See the
 [Face re-verification guide](https://docs.proofage.net/integration/face-reverification).
 
 ## Testing outcomes in a test workspace

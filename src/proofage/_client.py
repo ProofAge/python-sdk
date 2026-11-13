@@ -158,7 +158,7 @@ class ProofAge:
             if (
                 not last
                 and is_retryable_status(prepared.method, response.status_code)
-                and within_retry_after_cap(response.status_code, retry_after)
+                and within_retry_after_cap(response.status_code, retry_after, response.text)
             ):
                 self._sleep(retry_delay(self._config, attempt, response.status_code, retry_after))
                 continue

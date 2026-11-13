@@ -118,10 +118,10 @@ def test_a_refused_face_reverification_raises_with_its_code(
     assert route.call_count == 1
 
 
-def test_the_reauth_rate_limit_raises_a_rate_limit_error_with_its_code(
+def test_the_reauth_rate_limit_raises_at_once_without_retrying(
     sdk: Harness, api: respx.MockRouter
 ) -> None:
-    api.post("/verifications").respond(
+    route = api.post("/verifications").respond(
         429, json={"error": {"code": "REAUTH_RATE_LIMITED", "message": "Too many."}}
     )
     with pytest.raises(RateLimitError) as caught:
@@ -129,6 +129,19 @@ def test_the_reauth_rate_limit_raises_a_rate_limit_error_with_its_code(
             lambda c: c.verifications.create(reference_verification_id="ver-kyc"), retry_delay=0
         )
     assert caught.value.code == "REAUTH_RATE_LIMITED"
+    assert route.call_count == 1
+    assert sdk.sleeps == []
+
+
+def test_a_plain_429_is_still_retried(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[
+            httpx.Response(429, json={"error": {"code": "RATE_LIMIT", "message": "Slow."}}),
+            httpx.Response(201, json=VERIFICATION),
+        ]
+    )
+    sdk.call(lambda c: c.verifications.create(), retry_delay=0)
+    assert route.call_count == 2
 
 
 def test_create_with_nothing_sends_no_body(sdk: Harness, api: respx.MockRouter) -> None:
