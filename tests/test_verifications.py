@@ -70,7 +70,6 @@ def test_create_sends_only_what_was_given(sdk: Harness, api: respx.MockRouter) -
 REAUTH = {
     "reference_verification_id": "ver-kyc",
     "reference_verified_at": "2026-05-02T10:14:00+00:00",
-    "similarity": None,
 }
 
 
@@ -88,7 +87,7 @@ def test_create_a_face_reverification_sends_the_reference_and_parses_the_reauth_
     assert created.reauth is not None
     assert created.reauth.reference_verification_id == "ver-kyc"
     assert created.reauth.reference_verified_at is not None
-    assert created.reauth.similarity is None
+    assert not hasattr(created.reauth, "similarity")
 
 
 def test_a_verification_without_reauth_has_none(sdk: Harness, api: respx.MockRouter) -> None:

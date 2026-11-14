@@ -139,10 +139,6 @@ class Reauth(ProofAgeModel):
     that verification is deleted."""
     reference_verified_at: datetime | None
     """When the reference verification was approved."""
-    similarity: float | None
-    """How alike the two faces are, 0 to 1; approved when it reaches the threshold (currently
-    0.65). None until the faces were compared, and for good when the liveness check failed first.
-    In a test workspace it is fixed and illustrative: 0.9 for `approved`, 0.3 for `declined`."""
 
 
 class Verification(ProofAgeModel):

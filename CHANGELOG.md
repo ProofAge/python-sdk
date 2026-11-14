@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Removed (breaking in 0.x, a minor release):** `Reauth.similarity`. The `reauth` block of a face
+  re-verification, in `Verification` and in `WebhookEvent`, holds `reference_verification_id` and
+  `reference_verified_at` only; trust the decision (`status`, and `reason` `reference.face.mismatch`
+  when declined). There is no replacement field, and a test re-verification has no illustrative score
+  either. Remove any read of `reauth.similarity`.
+- **Changed:** the bundled `openapi.json` is synced with the docs.
+
 ## 0.11.0 — 2026-11-14
 
 - **Added:** face re-verification. `client.verifications.create(reference_verification_id=...)` takes

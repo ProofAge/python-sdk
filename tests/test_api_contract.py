@@ -312,7 +312,7 @@ def test_list_status_filter_names_only_known_statuses() -> None:
 
 
 def test_the_reauth_block_is_described_as_the_models_have_it() -> None:
-    fields = ["reference_verification_id", "reference_verified_at", "similarity"]
+    fields = ["reference_verification_id", "reference_verified_at"]
     schema = SPEC["paths"]["/verifications/{verification}"]["get"]["responses"]["200"]["content"][
         "application/json"
     ]["schema"]

@@ -137,14 +137,13 @@ def test_a_face_reverification_webhook_carries_a_typed_reauth_block() -> None:
             "reauth": {
                 "reference_verification_id": "ver-kyc",
                 "reference_verified_at": "2026-05-02T10:14:00+00:00",
-                "similarity": 0.31,
             },
         }
     )
     event = verify(body)
     assert event.reauth is not None
     assert event.reauth.reference_verification_id == "ver-kyc"
-    assert event.reauth.similarity == pytest.approx(0.31)
+    assert event.reauth.reference_verified_at is not None
     assert event.reason == "reference.face.mismatch"
 
 
