@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.12.0 — 2026-11-14
 
 - **Removed (breaking in 0.x, a minor release):** `Reauth.similarity`. The `reauth` block of a face
   re-verification, in `Verification` and in `WebhookEvent`, holds `reference_verification_id` and
