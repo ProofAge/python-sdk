@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## Unreleased
+## 0.13.0 — 2026-11-18
 
 - **Added:** `WorkspaceInfo.webhook_include_document_data` (defaults to `True` when the server does
   not send it). When it is `False`, webhooks to `webhook_url` carry no `document`,

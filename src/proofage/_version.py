@@ -1,3 +1,3 @@
 """The single source of the package version: hatchling and the SDK headers both read it."""
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
