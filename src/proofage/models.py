@@ -96,6 +96,9 @@ class WorkspaceInfo(ProofAgeModel):
     verification_type: str
     redirect_url: str | None
     webhook_url: str | None
+    webhook_include_document_data: bool = True
+    """Whether webhooks to `webhook_url` carry `document`, `fingerprint_signals` and
+    `manual_moderation.performed_by`. When false, `data.updated` is not sent there either."""
     allow_expired_documents: bool
     allow_duplicate_accounts: bool
 
@@ -301,7 +304,8 @@ class ManualModeration(ProofAgeModel):
     source: str
     performed_by: PerformedBy | None = None
     """Who moderated. Absent from a webhook subscription's deliveries unless it was created with
-    `include_document_data=True`."""
+    `include_document_data=True`, and from the workspace webhook when the workspace's
+    `webhook_include_document_data` is false."""
     source_status: str | None = None
     source_reason: str | None = None
 

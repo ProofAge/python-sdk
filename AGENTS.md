@@ -99,7 +99,7 @@ Keyword arguments the ProofAge widget sends (`fingerprint`, `page_url`, the brow
 
 ### GET /workspace — `client.workspace.get()` → `WorkspaceInfo`
 Request: none.
-Response: `{ id: str, name: str, flow_type: str, mode: str, age_mode: str|None, age_threshold: int|None, verification_type: str, redirect_url: str|None, webhook_url: str|None, allow_expired_documents: bool, allow_duplicate_accounts: bool }`
+Response: `{ id: str, name: str, flow_type: str, mode: str, age_mode: str|None, age_threshold: int|None, verification_type: str, redirect_url: str|None, webhook_url: str|None, webhook_include_document_data: bool, allow_expired_documents: bool, allow_duplicate_accounts: bool }`. `webhook_include_document_data: False` means webhooks to `webhook_url` leave out `document`, `fingerprint_signals` and `manual_moderation.performed_by` (all `None` on the parsed `WebhookEvent`), and no `data.updated` is sent there.
 
 ### GET /consent — `client.workspace.consent()` → `ConsentInfo`
 Request: none.
@@ -243,16 +243,16 @@ except WebhookVerificationError as error:
   "external_metadata": dict|None,
   "reason": str|None,                          # a code only on resubmission_requested / declined
   "timestamp": datetime,
-  "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed and on a subscription delivery without include_document_data
+  "document": Document|None,                   # as verifications.document() returns it, no media; None on a body sent before it existed, on a subscription delivery without include_document_data, and when the workspace's webhook_include_document_data is false
   "reauth": Reauth|None,                       # only on a face re-verification; its document fields are all None
   "changed_fields": list[str]|None,            # only on data.updated: names of what the correction changed (document.fields keys, or type, issuing_country, issuing_subdivision), no values
   "duplicate_detected": bool (default False),  # the three duplicate_* keys appear together
   "duplicate_count": int|None,
   "duplicate_of": { "verification_id": str, "external_id": str|None }|None,
-  "fingerprint_signals": dict|None,            # None on a subscription delivery without include_document_data
+  "fingerprint_signals": dict|None,            # None on a subscription delivery without include_document_data, and when webhook_include_document_data is false
   "manual_moderation": {                       # after a console approve/decline
     "action": "approve"|"decline", "reason": str, "source": "tenant_admin"|"landlord_admin",
-    "performed_by": { "id": int, "name": str|None, "email": str|None, "role": str|None }|None,  # None on a subscription delivery without include_document_data
+    "performed_by": { "id": int, "name": str|None, "email": str|None, "role": str|None }|None,  # None on a subscription delivery without include_document_data, and when webhook_include_document_data is false
     "source_status": str|None, "source_reason": str|None
   }|None,
   "delivery_id": str|None                      # from X-ProofAge-Webhook-Delivery-Id

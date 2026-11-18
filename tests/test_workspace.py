@@ -16,6 +16,7 @@ WORKSPACE = {
     "verification_type": "age",
     "redirect_url": None,
     "webhook_url": "https://shop.example/hook",
+    "webhook_include_document_data": True,
     "allow_expired_documents": False,
     "allow_duplicate_accounts": True,
 }

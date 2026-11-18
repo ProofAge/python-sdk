@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## Unreleased
+
+- **Added:** `WorkspaceInfo.webhook_include_document_data` (defaults to `True` when the server does
+  not send it). When it is `False`, webhooks to `webhook_url` carry no `document`,
+  `fingerprint_signals` or `manual_moderation.performed_by`, and no `data.updated` is sent there.
+- **Changed:** the bundled `openapi.json` is synced with the docs.
+
 ## 0.12.0 — 2026-11-14
 
 - **Removed (breaking in 0.x, a minor release):** `Reauth.similarity`. The `reauth` block of a face
