@@ -240,7 +240,9 @@ class AsyncProofAge:
     async def _stream_media(self, endpoint: str) -> AsyncIterator[httpx.Response]:
         prepared = prepare_json(self._config, "GET", endpoint, accept=DOWNLOAD_ACCEPT)
         attempts = self._config.download_retry_attempts
-        for attempt in range(attempts):
+        attempt = 0
+        skew_resent = False
+        while attempt < attempts:
             request = self._http.build_request(
                 "GET",
                 prepared.url,
@@ -252,11 +254,22 @@ class AsyncProofAge:
             except httpx.TransportError as exc:
                 if attempt < attempts - 1:
                     await self._sleep(retry_delay(self._config, attempt, None, None))
+                    attempt += 1
                     continue
                 raise TransportError(f"GET {prepared.url} failed: {exc}") from exc
             try:
                 if not response.is_success:
                     await response.aread()
+                    server_time = parse_http_date(response.headers.get("date"))
+                    if (
+                        not skew_resent
+                        and server_time is not None
+                        and is_timestamp_out_of_range(response.status_code, response.text)
+                    ):
+                        # Learn the clock skew once and resend, outside the download attempts.
+                        skew_resent = True
+                        self._clock_offset = server_time - self._clock()
+                        continue
                     raise error_for_response(
                         response.status_code,
                         response.text,

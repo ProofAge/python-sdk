@@ -319,7 +319,7 @@ TLS; the SDK never closes a client you pass in.
 - A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`
   at once (with `retry_after` set) instead of blocking your thread. Otherwise the wait grows by
   `retry_delay` per attempt.
-- Media downloads never retry an HTTP status; run them from a queue and let its backoff wait.
+- Media downloads never retry an HTTP status, except the one-shot clock-skew correction above; run them from a queue and let its backoff wait.
 
 ## Media
 
