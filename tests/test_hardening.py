@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import email.utils
 import re
+from datetime import datetime, timezone
 
 import httpx
 import pytest
@@ -206,7 +208,6 @@ def test_a_replayed_request_is_resent_once_with_a_new_timestamp(
     assert first.headers["X-HMAC-Signature"] != second.headers["X-HMAC-Signature"]
     assert first.headers["Idempotency-Key"] == second.headers["Idempotency-Key"] == "k"
     assert first.content == second.content
-    assert len(sdk.sleeps) == 1 and 0 <= sdk.sleeps[0] <= 1
 
 
 def test_a_second_replayed_request_raises(sdk: Harness, api: respx.MockRouter) -> None:
@@ -258,3 +259,100 @@ def test_a_delete_is_resent_on_replayed_request(sdk: Harness, api: respx.MockRou
     sdk.clock = Ticking()
     sdk.call(lambda c: c._delete("webhook-subscriptions/s1"))
     assert route.call_count == 2
+
+
+def http_date(unix: float) -> str:
+    return email.utils.format_datetime(datetime.fromtimestamp(unix, timezone.utc), usegmt=True)
+
+
+OUT_OF_RANGE = {"error": {"code": "TIMESTAMP_OUT_OF_RANGE", "message": "Clock is off."}}
+
+
+def test_clock_skew_is_learned_from_date_and_the_request_resent_once(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[
+            httpx.Response(401, headers={"Date": http_date(NOW + 400)}, json=OUT_OF_RANGE),
+            httpx.Response(201, json=CREATED),
+            httpx.Response(201, json=CREATED),
+        ]
+    )
+
+    def two_creates(client):  # type: ignore[no-untyped-def]
+        return (
+            client.verifications.create(idempotency_key="k"),
+            client.verifications.create(idempotency_key="k2"),
+        )
+
+    if sdk.kind == "sync":
+        sdk.call(two_creates, retry_attempts=1)
+    else:
+
+        async def run(client):  # type: ignore[no-untyped-def]
+            await client.verifications.create(idempotency_key="k")
+            await client.verifications.create(idempotency_key="k2")
+
+        sdk.call(run, retry_attempts=1)
+    first, second, third = (call.request for call in route.calls)
+    assert first.headers["X-Timestamp"] == str(NOW)
+    assert second.headers["X-Timestamp"] == str(NOW + 400)
+    assert second.headers["Idempotency-Key"] == "k"
+    assert second.headers["X-HMAC-Signature"] == sign(
+        SECRET_KEY, f"{NOW + 400}.{second.method}/v1/verifications"
+    )
+    assert int(third.headers["X-Timestamp"]) >= NOW + 400
+
+
+def test_a_second_out_of_range_raises(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/workspace").respond(
+        401, headers={"Date": http_date(NOW + 400)}, json=OUT_OF_RANGE
+    )
+    with pytest.raises(AuthenticationError) as raised:
+        sdk.call(lambda c: c._get("workspace"))
+    assert raised.value.code == "TIMESTAMP_OUT_OF_RANGE"
+    assert route.call_count == 2
+
+
+def test_out_of_range_without_a_date_header_raises_at_once(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.get("/workspace").respond(401, json=OUT_OF_RANGE)
+    with pytest.raises(AuthenticationError):
+        sdk.call(lambda c: c._get("workspace"))
+    assert route.call_count == 1
+
+
+def test_a_keyed_retry_within_the_same_second_waits_for_a_new_one(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[httpx.Response(500), httpx.Response(201, json=CREATED)]
+    )
+    sdk.call(lambda c: c.verifications.create(), retry_delay=0.1)
+    first, second = (call.request for call in route.calls)
+    assert int(second.headers["X-Timestamp"]) > int(first.headers["X-Timestamp"])
+    assert sum(sdk.sleeps) >= 1
+
+
+def test_an_early_wakeup_does_not_reuse_the_second(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[httpx.Response(503), httpx.Response(201, json=CREATED)]
+    )
+    real_sleep = sdk.sleep
+
+    def early(seconds: float) -> None:
+        real_sleep(seconds / 2)
+
+    sdk.sleep = early  # type: ignore[method-assign]
+    sdk.call(lambda c: c.verifications.create(), retry_delay=0.1)
+    first, second = (call.request for call in route.calls)
+    assert int(second.headers["X-Timestamp"]) > int(first.headers["X-Timestamp"])
+
+
+def test_a_get_retry_does_not_wait_for_a_new_second(sdk: Harness, api: respx.MockRouter) -> None:
+    api.get("/workspace").mock(
+        side_effect=[httpx.Response(503), httpx.Response(200, json={"id": "ws", "name": "Shop"})]
+    )
+    sdk.call(lambda c: c._get("workspace"), retry_delay=0.1)
+    assert sdk.sleeps == [0.1]

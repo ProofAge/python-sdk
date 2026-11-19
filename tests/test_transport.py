@@ -75,8 +75,10 @@ def test_a_delete_is_retried_on_429(sdk: Harness, api: respx.MockRouter) -> None
     )
     assert sdk.call(lambda c: c._delete("webhook-subscriptions/s1"), retry_delay=0) is None
     assert route.call_count == 2
-    assert route.calls.last.request.headers["X-HMAC-Signature"] == sign(
-        SECRET_KEY, f"{NOW}.DELETE/v1/webhook-subscriptions/s1"
+    headers = route.calls.last.request.headers
+    assert int(headers["X-Timestamp"]) > NOW
+    assert headers["X-HMAC-Signature"] == sign(
+        SECRET_KEY, f"{headers['X-Timestamp']}.DELETE/v1/webhook-subscriptions/s1"
     )
 
 

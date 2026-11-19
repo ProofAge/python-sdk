@@ -16,6 +16,13 @@ release may change the API and a patch release never does.
   new `X-Timestamp` and with the same `Idempotency-Key`. It is not counted in `retry_attempts` and
   applies even where the normal rules do not retry; a second `REPLAYED_REQUEST` raises
   `AuthenticationError`. GET is unaffected.
+- **Added:** clock-skew recovery. On `401 TIMESTAMP_OUT_OF_RANGE` with a parseable `Date` header the
+  client keeps an offset (server `Date` minus local clock) for all later timestamps and resends the
+  request once, with the same `Idempotency-Key`, outside `retry_attempts`. Without `Date`, or on a
+  second one, `AuthenticationError` is raised.
+- **Changed:** before any re-attempt of a POST or DELETE (a retry, the replay resend or the skew
+  resend) the client waits until the clock is in a later whole second than the previous attempt's
+  `X-Timestamp`, so a retried 5xx or 429 is not refused as `REPLAYED_REQUEST`.
 - **Added:** `Idempotency-Key` on `verifications.create()` and `webhook_subscriptions.create()`,
   sync and async. The SDK sends a new UUID v4 per call and keeps it across its own retries; pass
   `idempotency_key=` to use your own (1 to 255 printable ASCII characters, else `ConfigurationError`).

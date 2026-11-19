@@ -14,6 +14,8 @@ import httpx
 from ._config import resolve_config
 from ._transport import (
     DOWNLOAD_ACCEPT,
+    NEW_SECOND_MARGIN,
+    NEW_SECOND_MAX_WAITS,
     M,
     PreparedRequest,
     api_path,
@@ -22,11 +24,13 @@ from ._transport import (
     is_replayed_request,
     is_retryable_exception,
     is_retryable_status,
+    is_signed_once,
+    is_timestamp_out_of_range,
+    parse_http_date,
     parse_model,
     parse_retry_after,
     prepare_json,
     prepare_multipart,
-    replay_wait,
     retry_delay,
     within_retry_after_cap,
 )
@@ -70,6 +74,7 @@ class AsyncProofAge:
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=self._config.timeout)
         self._clock: Callable[[], float] = time.time
+        self._clock_offset = 0.0
         self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
         self.workspace = AsyncWorkspace(self)
         self.verifications = AsyncVerifications(self)
@@ -143,13 +148,32 @@ class AsyncProofAge:
         )
         await self._send(prepared, expect_body=False)
 
+    def _now(self) -> float:
+        """Unix time as the server sees it: the local clock plus the skew learned from `Date`."""
+        return self._clock() + self._clock_offset
+
+    async def _await_new_second(self, previous: int) -> None:
+        """Wait until the clock is in another whole second than `previous`, the second the last
+        attempt was signed in: a retry of a non-GET in the same second would repeat its
+        signature. Loops because a sleep can wake early."""
+        for _ in range(NEW_SECOND_MAX_WAITS):
+            now = self._now()
+            if int(now) != previous:
+                return
+            await self._sleep(previous + 1 - now + NEW_SECOND_MARGIN)
+
     async def _send(self, prepared: PreparedRequest, *, expect_body: bool) -> Any:
         attempts = self._config.retry_attempts
         attempt = 0
         replay_resent = False
+        skew_resent = False
+        previous: int | None = None
         while attempt < attempts:
             last = attempt == attempts - 1
-            signed_at = self._clock()
+            if previous is not None and is_signed_once(prepared.method):
+                await self._await_new_second(previous)
+            signed_at = self._now()
+            previous = int(signed_at)
             try:
                 response = await self._http.request(
                     prepared.method,
@@ -181,11 +205,19 @@ class AsyncProofAge:
                 prepared.method, response.status_code, response.text
             ):
                 # Not counted against retry_attempts, and sent even when the retry policy would
-                # not retry: the middleware refused it before anything ran.
+                # not retry: the middleware refused it before anything ran. The next attempt
+                # waits for a new second like any other.
                 replay_resent = True
-                await self._sleep(replay_wait(signed_at, self._clock()))
                 continue
-            retry_after = parse_retry_after(response.headers.get("retry-after"), self._clock())
+            if not skew_resent and is_timestamp_out_of_range(response.status_code, response.text):
+                server_time = parse_http_date(response.headers.get("date"))
+                if server_time is not None:
+                    # This host's clock is off: learn the skew once, keep it for the client's
+                    # later requests, and resend this one, outside retry_attempts.
+                    skew_resent = True
+                    self._clock_offset = server_time - self._clock()
+                    continue
+            retry_after = parse_retry_after(response.headers.get("retry-after"), self._now())
             if (
                 not last
                 and is_retryable_status(
@@ -212,7 +244,7 @@ class AsyncProofAge:
             request = self._http.build_request(
                 "GET",
                 prepared.url,
-                headers=prepared.signed_headers(self._config.secret_key, self._clock()),
+                headers=prepared.signed_headers(self._config.secret_key, self._now()),
                 timeout=self._config.timeout,
             )
             try:
@@ -228,7 +260,7 @@ class AsyncProofAge:
                     raise error_for_response(
                         response.status_code,
                         response.text,
-                        parse_retry_after(response.headers.get("retry-after"), self._clock()),
+                        parse_retry_after(response.headers.get("retry-after"), self._now()),
                     )
                 yield response
             finally:

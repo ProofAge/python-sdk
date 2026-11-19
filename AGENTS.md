@@ -74,7 +74,7 @@ uses the same key and a new `X-Timestamp` and signature. A non-GET request answe
 second, so the signature repeated; the server refuses it before anything runs) is resent **once**
 after waiting for the next whole second, with a new `X-Timestamp` and signature and the same
 `Idempotency-Key`; this applies to every POST and DELETE, whatever the rules below, and does not
-count against `retry_attempts`. A second `REPLAYED_REQUEST` raises `AuthenticationError`. Other POSTs and DELETEs retry
+count against `retry_attempts`. A second `REPLAYED_REQUEST` raises `AuthenticationError`. Before any re-attempt of a non-GET (a normal retry, this resend, the skew resend) the client waits until its clock is in a later whole second than the previous attempt's `X-Timestamp`, so a 5xx or 429 retried within the same second is not refused as a replay. On `401 TIMESTAMP_OUT_OF_RANGE` (any method) with a parseable `Date` header, the client sets an offset (server `Date` minus local clock) that it applies to every later timestamp, and resends that request once, with the same `Idempotency-Key`, outside `retry_attempts`; with no `Date`, or on a second one, `AuthenticationError` is raised as before. Other POSTs and DELETEs retry
 **only** on 429 and on errors raised before anything was sent (`httpx.ConnectError`,
 `httpx.ConnectTimeout`) — never on 5xx or after sending began (`WriteError`, `WriteTimeout`,
 `ReadError`, `ReadTimeout`, `RemoteProtocolError`), where the server may already have created the

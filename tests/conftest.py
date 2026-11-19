@@ -36,7 +36,16 @@ class Harness:
 
     kind: str
     sleeps: list[float] = field(default_factory=list)
-    clock: Callable[[], float] = lambda: float(NOW)
+    clock: Callable[[], float] | None = None
+    """Overrides the default clock, which is `NOW` plus the seconds slept so far."""
+    elapsed: float = 0.0
+
+    def now(self) -> float:
+        return NOW + self.elapsed
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.elapsed += seconds
 
     def call(self, fn: Callable[[Any], Any], **client_kwargs: Any) -> Any:
         kwargs: dict[str, Any] = {
@@ -47,18 +56,18 @@ class Harness:
         }
         if self.kind == "sync":
             with ProofAge(**kwargs) as client:
-                client._sleep = self.sleeps.append
-                client._clock = self.clock
+                client._sleep = self.sleep
+                client._clock = self.clock or self.now
                 return fn(client)
 
         async def main() -> Any:
             async with AsyncProofAge(**kwargs) as client:
 
                 async def record(seconds: float) -> None:
-                    self.sleeps.append(seconds)
+                    self.sleep(seconds)
 
                 client._sleep = record
-                client._clock = self.clock
+                client._clock = self.clock or self.now
                 return await fn(client)
 
         return asyncio.run(main())

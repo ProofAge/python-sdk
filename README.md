@@ -309,6 +309,11 @@ TLS; the SDK never closes a client you pass in.
 - A POST or DELETE answered `401 REPLAYED_REQUEST` (an identical request was signed in the same
   second) is resent once, after the next whole second, with a new `X-Timestamp`, signature and the
   same key. It does not count against `retry_attempts`; a second one raises `AuthenticationError`.
+- A POST or DELETE is never re-sent within the same second as its previous attempt: the client waits
+  for a new whole second first, so a retried 5xx or 429 is not refused as a replay.
+- `401 TIMESTAMP_OUT_OF_RANGE` means this machine's clock is more than 5 minutes off. When the
+  response has a `Date` header, the client learns the offset, keeps it for the life of the client and
+  resends the request once (same key, outside `retry_attempts`). Fix the host's clock anyway.
 - Any other POST or DELETE is retried only on 429 and when the connection never opened. It is never
   retried on a 5xx or once sending began, because the server may already have acted on it.
 - A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`

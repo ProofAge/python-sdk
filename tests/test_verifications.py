@@ -509,7 +509,8 @@ def test_erase_personal_data_is_retried_on_429(sdk: Harness, api: respx.MockRout
     assert sdk.sleeps == [1.0]
     first, second = (call.request for call in route.calls)
     assert first.content == second.content
-    assert first.headers["X-HMAC-Signature"] == second.headers["X-HMAC-Signature"]
+    assert int(second.headers["X-Timestamp"]) > int(first.headers["X-Timestamp"])
+    assert first.headers["X-HMAC-Signature"] != second.headers["X-HMAC-Signature"]
 
 
 def test_erase_personal_data_of_a_verification_not_final(

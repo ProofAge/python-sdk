@@ -299,9 +299,36 @@ def is_replayed_request(method: str, status: int, text: str) -> bool:
     )
 
 
-def replay_wait(signed_at: float, now: float) -> float:
-    """Seconds until the whole second after the one the request was signed in."""
-    return max(0.0, int(signed_at) + 1 - now)
+TIMESTAMP_RANGE_CODE = "TIMESTAMP_OUT_OF_RANGE"
+
+
+def is_timestamp_out_of_range(status: int, text: str) -> bool:
+    """A 401 `TIMESTAMP_OUT_OF_RANGE`, for any method: the clock is off by over 5 minutes."""
+    return status == 401 and parse_error_body(text)[1] == TIMESTAMP_RANGE_CODE
+
+
+def parse_http_date(value: str | None) -> float | None:
+    """A response `Date` header as Unix seconds, or None when absent or unparseable."""
+    if not value:
+        return None
+    try:
+        when = email.utils.parsedate_to_datetime(value.strip())
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.timestamp()
+
+
+NEW_SECOND_MARGIN = 0.05
+NEW_SECOND_MAX_WAITS = 10
+
+
+def is_signed_once(method: str) -> bool:
+    """The server accepts a timestamped request other than GET/HEAD once: it needs a new second."""
+    return method.upper() not in _IDEMPOTENT
 
 
 def is_retryable_exception(method: str, exc: httpx.TransportError, *, keyed: bool = False) -> bool:
