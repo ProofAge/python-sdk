@@ -9,7 +9,7 @@ import pytest
 import respx
 
 from proofage._signing import sign
-from proofage.errors import ConfigurationError, ProofAgeError, ServerError
+from proofage.errors import AuthenticationError, ConfigurationError, ProofAgeError, ServerError
 
 from .conftest import NOW, SECRET_KEY, Harness
 from .test_models import VERIFICATION
@@ -188,3 +188,73 @@ def test_a_409_in_progress_on_an_unkeyed_post_is_not_retried(
     with pytest.raises(ProofAgeError):
         sdk.call(lambda c: c._post("verifications", {}), retry_delay=0)
     assert route.call_count == 1
+
+
+REPLAYED = {"error": {"code": "REPLAYED_REQUEST", "message": "Already used."}}
+
+
+def test_a_replayed_request_is_resent_once_with_a_new_timestamp(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[httpx.Response(401, json=REPLAYED), httpx.Response(201, json=CREATED)]
+    )
+    sdk.clock = Ticking()
+    sdk.call(lambda c: c.verifications.create(idempotency_key="k"), retry_delay=0)
+    first, second = (call.request for call in route.calls)
+    assert first.headers["X-Timestamp"] != second.headers["X-Timestamp"]
+    assert first.headers["X-HMAC-Signature"] != second.headers["X-HMAC-Signature"]
+    assert first.headers["Idempotency-Key"] == second.headers["Idempotency-Key"] == "k"
+    assert first.content == second.content
+    assert len(sdk.sleeps) == 1 and 0 <= sdk.sleeps[0] <= 1
+
+
+def test_a_second_replayed_request_raises(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.post("/verifications").respond(401, json=REPLAYED)
+    sdk.clock = Ticking()
+    with pytest.raises(AuthenticationError) as raised:
+        sdk.call(lambda c: c._post("verifications", {}), retry_delay=0)
+    assert raised.value.code == "REPLAYED_REQUEST"
+    assert route.call_count == 2
+
+
+def test_the_replay_resend_works_with_a_single_attempt_and_for_unkeyed_posts(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[httpx.Response(401, json=REPLAYED), httpx.Response(201, json=CREATED)]
+    )
+    sdk.clock = Ticking()
+    sdk.call(lambda c: c._post("verifications", {}), retry_attempts=1)
+    assert route.call_count == 2
+
+
+def test_the_replay_resend_does_not_use_up_a_retry_attempt(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
+    route = api.post("/verifications").mock(
+        side_effect=[
+            httpx.Response(401, json=REPLAYED),
+            httpx.Response(503),
+            httpx.Response(201, json=CREATED),
+        ]
+    )
+    sdk.clock = Ticking()
+    sdk.call(lambda c: c.verifications.create(), retry_attempts=2, retry_delay=0)
+    assert route.call_count == 3
+
+
+def test_a_get_is_not_resent_on_replayed_request(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.get("/workspace").respond(401, json=REPLAYED)
+    with pytest.raises(AuthenticationError):
+        sdk.call(lambda c: c._get("workspace"))
+    assert route.call_count == 1
+
+
+def test_a_delete_is_resent_on_replayed_request(sdk: Harness, api: respx.MockRouter) -> None:
+    route = api.delete("/webhook-subscriptions/s1").mock(
+        side_effect=[httpx.Response(401, json=REPLAYED), httpx.Response(204)]
+    )
+    sdk.clock = Ticking()
+    sdk.call(lambda c: c._delete("webhook-subscriptions/s1"))
+    assert route.call_count == 2

@@ -70,7 +70,11 @@ promised, an empty or non-JSON 2xx raises `ProofAgeError` (a non-JSON one almost
 Retries: GETs, and the two create calls (`verifications.create`, `webhook_subscriptions.create`,
 which carry an `Idempotency-Key`), retry on 408, 429, 5xx, timeouts and transport errors; a create
 also retries `409 IDEMPOTENCY_KEY_IN_PROGRESS`, waiting for `Retry-After` (up to 60 s). Every retry
-uses the same key and a new `X-Timestamp` and signature. Other POSTs and DELETEs retry
+uses the same key and a new `X-Timestamp` and signature. A non-GET request answered `401 REPLAYED_REQUEST` (a byte-identical request was signed in the same
+second, so the signature repeated; the server refuses it before anything runs) is resent **once**
+after waiting for the next whole second, with a new `X-Timestamp` and signature and the same
+`Idempotency-Key`; this applies to every POST and DELETE, whatever the rules below, and does not
+count against `retry_attempts`. A second `REPLAYED_REQUEST` raises `AuthenticationError`. Other POSTs and DELETEs retry
 **only** on 429 and on errors raised before anything was sent (`httpx.ConnectError`,
 `httpx.ConnectTimeout`) — never on 5xx or after sending began (`WriteError`, `WriteTimeout`,
 `ReadError`, `ReadTimeout`, `RemoteProtocolError`), where the server may already have created the

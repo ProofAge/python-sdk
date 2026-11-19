@@ -306,6 +306,9 @@ TLS; the SDK never closes a client you pass in.
   per call, or your `idempotency_key=`), so they are retried like a GET, and a
   `409 IDEMPOTENCY_KEY_IN_PROGRESS` waits for its `Retry-After`. Every retry reuses the key and is
   signed again with a new `X-Timestamp`.
+- A POST or DELETE answered `401 REPLAYED_REQUEST` (an identical request was signed in the same
+  second) is resent once, after the next whole second, with a new `X-Timestamp`, signature and the
+  same key. It does not count against `retry_attempts`; a second one raises `AuthenticationError`.
 - Any other POST or DELETE is retried only on 429 and when the connection never opened. It is never
   retried on a 5xx or once sending began, because the server may already have acted on it.
 - A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`

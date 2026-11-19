@@ -286,6 +286,24 @@ def is_retryable_status(method: str, status: int, *, keyed: bool = False, text: 
     return status == 429
 
 
+REPLAYED_CODE = "REPLAYED_REQUEST"
+
+
+def is_replayed_request(method: str, status: int, text: str) -> bool:
+    """A non-GET 401 `REPLAYED_REQUEST`: a byte-identical request was signed in the same second.
+    The server refused it in middleware, so nothing ran and one re-signed resend is safe."""
+    return (
+        method.upper() not in _IDEMPOTENT
+        and status == 401
+        and parse_error_body(text)[1] == REPLAYED_CODE
+    )
+
+
+def replay_wait(signed_at: float, now: float) -> float:
+    """Seconds until the whole second after the one the request was signed in."""
+    return max(0.0, int(signed_at) + 1 - now)
+
+
 def is_retryable_exception(method: str, exc: httpx.TransportError, *, keyed: bool = False) -> bool:
     """GET and keyed POST: any transport failure. Other POSTs and DELETEs: only failures before
     a byte was sent."""

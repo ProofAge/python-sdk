@@ -19,12 +19,14 @@ from ._transport import (
     api_path,
     decode_success,
     error_for_response,
+    is_replayed_request,
     is_retryable_exception,
     is_retryable_status,
     parse_model,
     parse_retry_after,
     prepare_json,
     prepare_multipart,
+    replay_wait,
     retry_delay,
     within_retry_after_cap,
 )
@@ -143,13 +145,16 @@ class AsyncProofAge:
 
     async def _send(self, prepared: PreparedRequest, *, expect_body: bool) -> Any:
         attempts = self._config.retry_attempts
-        for attempt in range(attempts):
+        attempt = 0
+        replay_resent = False
+        while attempt < attempts:
             last = attempt == attempts - 1
+            signed_at = self._clock()
             try:
                 response = await self._http.request(
                     prepared.method,
                     prepared.url,
-                    headers=prepared.signed_headers(self._config.secret_key, self._clock()),
+                    headers=prepared.signed_headers(self._config.secret_key, signed_at),
                     content=prepared.content,
                     data=prepared.data,
                     files=prepared.files,
@@ -160,6 +165,7 @@ class AsyncProofAge:
                     prepared.method, exc, keyed=prepared.idempotency_key is not None
                 ):
                     await self._sleep(retry_delay(self._config, attempt, None, None))
+                    attempt += 1
                     continue
                 raise TransportError(f"{prepared.method} {prepared.url} failed: {exc}") from exc
 
@@ -171,6 +177,14 @@ class AsyncProofAge:
                     response.headers.get("content-type"),
                     expect_body=expect_body,
                 )
+            if not replay_resent and is_replayed_request(
+                prepared.method, response.status_code, response.text
+            ):
+                # Not counted against retry_attempts, and sent even when the retry policy would
+                # not retry: the middleware refused it before anything ran.
+                replay_resent = True
+                await self._sleep(replay_wait(signed_at, self._clock()))
+                continue
             retry_after = parse_retry_after(response.headers.get("retry-after"), self._clock())
             if (
                 not last
@@ -185,6 +199,7 @@ class AsyncProofAge:
                 await self._sleep(
                     retry_delay(self._config, attempt, response.status_code, retry_after)
                 )
+                attempt += 1
                 continue
             raise error_for_response(response.status_code, response.text, retry_after)
         raise AssertionError("unreachable: the loop returns or raises")

@@ -11,6 +11,11 @@ release may change the API and a patch release never does.
   attempt, so a retry is never rejected as a replay (`REPLAYED_REQUEST`). Workspaces that require a
   timestamp (`TIMESTAMP_REQUIRED`) now work; `TIMESTAMP_OUT_OF_RANGE` means the machine's clock is
   more than 5 minutes off.
+- **Added:** a POST or DELETE answered `401 REPLAYED_REQUEST` (two byte-identical requests signed in
+  the same second share a signature) is resent once after the next whole second, re-signed with a
+  new `X-Timestamp` and with the same `Idempotency-Key`. It is not counted in `retry_attempts` and
+  applies even where the normal rules do not retry; a second `REPLAYED_REQUEST` raises
+  `AuthenticationError`. GET is unaffected.
 - **Added:** `Idempotency-Key` on `verifications.create()` and `webhook_subscriptions.create()`,
   sync and async. The SDK sends a new UUID v4 per call and keeps it across its own retries; pass
   `idempotency_key=` to use your own (1 to 255 printable ASCII characters, else `ConfigurationError`).
