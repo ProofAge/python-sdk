@@ -63,14 +63,16 @@ def test_create_refuses_a_single_string_for_statuses(api: respx.MockRouter) -> N
     assert not api.calls
 
 
-def test_create_is_not_retried_on_5xx(sdk: Harness, api: respx.MockRouter) -> None:
+def test_create_is_retried_on_5xx_because_it_carries_an_idempotency_key(
+    sdk: Harness, api: respx.MockRouter
+) -> None:
     route = api.post("/webhook-subscriptions").respond(502)
     with pytest.raises(ServerError):
         sdk.call(
             lambda c: c.webhook_subscriptions.create(url="https://example.com/hook"),
             retry_delay=0,
         )
-    assert route.call_count == 1
+    assert route.call_count == 3
 
 
 def test_create_past_the_limit(sdk: Harness, api: respx.MockRouter) -> None:

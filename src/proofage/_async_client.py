@@ -67,6 +67,7 @@ class AsyncProofAge:
         )
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=self._config.timeout)
+        self._clock: Callable[[], float] = time.time
         self._sleep: Callable[[float], Awaitable[None]] = asyncio.sleep
         self.workspace = AsyncWorkspace(self)
         self.verifications = AsyncVerifications(self)
@@ -95,8 +96,12 @@ class AsyncProofAge:
         prepared = prepare_json(self._config, "GET", endpoint, query=query)
         return await self._send(prepared, expect_body=True)
 
-    async def _post(self, endpoint: str, payload: Mapping[str, Any]) -> Any:
-        prepared = prepare_json(self._config, "POST", endpoint, payload)
+    async def _post(
+        self, endpoint: str, payload: Mapping[str, Any], *, idempotency_key: str | None = None
+    ) -> Any:
+        prepared = prepare_json(
+            self._config, "POST", endpoint, payload, idempotency_key=idempotency_key
+        )
         return await self._send(prepared, expect_body=True)
 
     async def _get_model(
@@ -105,8 +110,15 @@ class AsyncProofAge:
         data = await self._get(endpoint, query)
         return parse_model(model, data, f"GET {api_path(self._config, endpoint)}")
 
-    async def _post_model(self, endpoint: str, payload: Mapping[str, Any], model: type[M]) -> M:
-        data = await self._post(endpoint, payload)
+    async def _post_model(
+        self,
+        endpoint: str,
+        payload: Mapping[str, Any],
+        model: type[M],
+        *,
+        idempotency_key: str | None = None,
+    ) -> M:
+        data = await self._post(endpoint, payload, idempotency_key=idempotency_key)
         return parse_model(model, data, f"POST {api_path(self._config, endpoint)}")
 
     async def _post_empty(self, endpoint: str, payload: Mapping[str, Any] | None = None) -> None:
@@ -137,14 +149,16 @@ class AsyncProofAge:
                 response = await self._http.request(
                     prepared.method,
                     prepared.url,
-                    headers=prepared.headers,
+                    headers=prepared.signed_headers(self._config.secret_key, self._clock()),
                     content=prepared.content,
                     data=prepared.data,
                     files=prepared.files,
                     timeout=self._config.timeout,
                 )
             except httpx.TransportError as exc:
-                if not last and is_retryable_exception(prepared.method, exc):
+                if not last and is_retryable_exception(
+                    prepared.method, exc, keyed=prepared.idempotency_key is not None
+                ):
                     await self._sleep(retry_delay(self._config, attempt, None, None))
                     continue
                 raise TransportError(f"{prepared.method} {prepared.url} failed: {exc}") from exc
@@ -157,10 +171,15 @@ class AsyncProofAge:
                     response.headers.get("content-type"),
                     expect_body=expect_body,
                 )
-            retry_after = parse_retry_after(response.headers.get("retry-after"), time.time())
+            retry_after = parse_retry_after(response.headers.get("retry-after"), self._clock())
             if (
                 not last
-                and is_retryable_status(prepared.method, response.status_code)
+                and is_retryable_status(
+                    prepared.method,
+                    response.status_code,
+                    keyed=prepared.idempotency_key is not None,
+                    text=response.text,
+                )
                 and within_retry_after_cap(response.status_code, retry_after, response.text)
             ):
                 await self._sleep(
@@ -176,7 +195,10 @@ class AsyncProofAge:
         attempts = self._config.download_retry_attempts
         for attempt in range(attempts):
             request = self._http.build_request(
-                "GET", prepared.url, headers=prepared.headers, timeout=self._config.timeout
+                "GET",
+                prepared.url,
+                headers=prepared.signed_headers(self._config.secret_key, self._clock()),
+                timeout=self._config.timeout,
             )
             try:
                 response = await self._http.send(request, stream=True)
@@ -191,7 +213,7 @@ class AsyncProofAge:
                     raise error_for_response(
                         response.status_code,
                         response.text,
-                        parse_retry_after(response.headers.get("retry-after"), time.time()),
+                        parse_retry_after(response.headers.get("retry-after"), self._clock()),
                     )
                 yield response
             finally:

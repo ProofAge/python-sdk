@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from .._transport import resolve_idempotency_key
 from ..models import VerificationStatus, WebhookSubscription, WebhookSubscriptionList
 from ._payloads import compact, path_segment, status_list
 
@@ -43,6 +44,7 @@ class WebhookSubscriptions:
         url: str,
         statuses: Sequence[VerificationStatus | str] | None = None,
         include_document_data: bool | None = None,
+        idempotency_key: str | None = None,
     ) -> WebhookSubscription:
         """`POST /webhook-subscriptions`. Up to 50 per workspace.
 
@@ -50,9 +52,17 @@ class WebhookSubscriptions:
         `resubmission_requested`, `review`, `abandoned`, `expired`); None sends all of them.
         `include_document_data=True` adds the document, the fingerprint signals and the
         moderator's name and email to the body; the API's default leaves them out.
+
+        The call carries an `Idempotency-Key` (yours in `idempotency_key`, else a new UUID v4),
+        the same on every retry, so a retried create never makes a second subscription.
         """
         payload = _create_payload(url, statuses, include_document_data)
-        return self._client._post_model("webhook-subscriptions", payload, WebhookSubscription)
+        return self._client._post_model(
+            "webhook-subscriptions",
+            payload,
+            WebhookSubscription,
+            idempotency_key=resolve_idempotency_key(idempotency_key),
+        )
 
     def list(self) -> WebhookSubscriptionList:
         """`GET /webhook-subscriptions`: every subscription of the workspace, newest first."""
@@ -75,10 +85,16 @@ class AsyncWebhookSubscriptions:
         url: str,
         statuses: Sequence[VerificationStatus | str] | None = None,
         include_document_data: bool | None = None,
+        idempotency_key: str | None = None,
     ) -> WebhookSubscription:
         """`POST /webhook-subscriptions`. Up to 50 per workspace (see the sync twin)."""
         payload = _create_payload(url, statuses, include_document_data)
-        return await self._client._post_model("webhook-subscriptions", payload, WebhookSubscription)
+        return await self._client._post_model(
+            "webhook-subscriptions",
+            payload,
+            WebhookSubscription,
+            idempotency_key=resolve_idempotency_key(idempotency_key),
+        )
 
     async def list(self) -> WebhookSubscriptionList:
         """`GET /webhook-subscriptions`: every subscription of the workspace, newest first."""

@@ -37,7 +37,7 @@ from proofage.models import (
     VerificationStatus,
 )
 
-from .conftest import API_KEY, SECRET_KEY, VERIFICATION_ID, Harness
+from .conftest import API_KEY, NOW, SECRET_KEY, VERIFICATION_ID, Harness
 from .test_models import VERIFICATION
 
 VID = VERIFICATION_ID
@@ -45,7 +45,7 @@ VID = VERIFICATION_ID
 
 def sign_raw(canonical: str) -> str:
     """The signature computed here, independently of the SDK's signing module."""
-    return hmac.new(SECRET_KEY.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(SECRET_KEY.encode(), f"{NOW}.{canonical}".encode(), hashlib.sha256).hexdigest()
 
 
 def body(route: respx.Route) -> Any:

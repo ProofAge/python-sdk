@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## 0.14.0 — 2026-11-19
+
+- **Added:** every signed request now carries `X-Timestamp` (Unix seconds) and the signature covers
+  `{timestamp}.{canonical request}`. The timestamp and the signature are computed again on every
+  attempt, so a retry is never rejected as a replay (`REPLAYED_REQUEST`). Workspaces that require a
+  timestamp (`TIMESTAMP_REQUIRED`) now work; `TIMESTAMP_OUT_OF_RANGE` means the machine's clock is
+  more than 5 minutes off.
+- **Added:** `Idempotency-Key` on `verifications.create()` and `webhook_subscriptions.create()`,
+  sync and async. The SDK sends a new UUID v4 per call and keeps it across its own retries; pass
+  `idempotency_key=` to use your own (1 to 255 printable ASCII characters, else `ConfigurationError`).
+  Within 24 hours the same key and request return the first response; the same key with a different
+  request raises `ProofAgeError` `IDEMPOTENCY_KEY_REUSED` (409).
+- **Changed:** a create call, because it carries a key, is now retried like a GET (408, 429, 5xx and
+  any transport failure) and waits out `409 IDEMPOTENCY_KEY_IN_PROGRESS` using `Retry-After`. Every
+  other POST and DELETE keeps its retry rules, and the attempt counts and delays are unchanged.
+- **Changed:** the bundled `openapi.json` is synced with the docs; `tests/fixtures/hmac-vectors.json`
+  gains the `timestamped` vectors.
+
 ## 0.13.0 — 2026-11-18
 
 - **Added:** `WorkspaceInfo.webhook_include_document_data` (defaults to `True` when the server does

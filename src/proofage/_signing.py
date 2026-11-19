@@ -107,6 +107,11 @@ def to_multipart_fields(data: Mapping[str, Any]) -> dict[str, str]:
     return fields
 
 
+def timestamped_canonical(timestamp: str | int, canonical: str) -> str:
+    """`{X-Timestamp}.{canonical}`: what is signed when the request carries `X-Timestamp`."""
+    return f"{timestamp}.{canonical}"
+
+
 def sign(secret: str, canonical: str | bytes) -> str:
     """Hex HMAC-SHA256 of the canonical string with the workspace secret key."""
     message = canonical.encode("utf-8") if isinstance(canonical, str) else canonical

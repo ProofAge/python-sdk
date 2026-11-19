@@ -302,7 +302,11 @@ TLS; the SDK never closes a client you pass in.
 ## Retries
 
 - A GET is retried on 408, 429, 5xx, timeouts and connection failures.
-- A POST or DELETE is retried only on 429 and when the connection never opened. It is never
+- `verifications.create()` and `webhook_subscriptions.create()` send an `Idempotency-Key` (a UUID v4
+  per call, or your `idempotency_key=`), so they are retried like a GET, and a
+  `409 IDEMPOTENCY_KEY_IN_PROGRESS` waits for its `Retry-After`. Every retry reuses the key and is
+  signed again with a new `X-Timestamp`.
+- Any other POST or DELETE is retried only on 429 and when the connection never opened. It is never
   retried on a 5xx or once sending began, because the server may already have acted on it.
 - A 429 waits for its `Retry-After`, up to 60 seconds; a longer `Retry-After` raises `RateLimitError`
   at once (with `retry_after` set) instead of blocking your thread. Otherwise the wait grows by
