@@ -37,7 +37,7 @@ from proofage.models import (
     VerificationStatus,
 )
 
-from .conftest import API_KEY, SECRET_KEY, VERIFICATION_ID, Harness
+from .conftest import API_KEY, NOW, SECRET_KEY, VERIFICATION_ID, Harness
 from .test_models import VERIFICATION
 
 VID = VERIFICATION_ID
@@ -45,7 +45,7 @@ VID = VERIFICATION_ID
 
 def sign_raw(canonical: str) -> str:
     """The signature computed here, independently of the SDK's signing module."""
-    return hmac.new(SECRET_KEY.encode(), canonical.encode(), hashlib.sha256).hexdigest()
+    return hmac.new(SECRET_KEY.encode(), f"{NOW}.{canonical}".encode(), hashlib.sha256).hexdigest()
 
 
 def body(route: respx.Route) -> Any:
@@ -509,7 +509,8 @@ def test_erase_personal_data_is_retried_on_429(sdk: Harness, api: respx.MockRout
     assert sdk.sleeps == [1.0]
     first, second = (call.request for call in route.calls)
     assert first.content == second.content
-    assert first.headers["X-HMAC-Signature"] == second.headers["X-HMAC-Signature"]
+    assert int(second.headers["X-Timestamp"]) > int(first.headers["X-Timestamp"])
+    assert first.headers["X-HMAC-Signature"] != second.headers["X-HMAC-Signature"]
 
 
 def test_erase_personal_data_of_a_verification_not_final(

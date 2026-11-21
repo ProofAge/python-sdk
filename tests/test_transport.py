@@ -19,7 +19,7 @@ from proofage.errors import (
     TransportError,
 )
 
-from .conftest import API_KEY, BASE_URL, SECRET_KEY, VERIFICATION_ID, Harness
+from .conftest import API_KEY, BASE_URL, NOW, SECRET_KEY, VERIFICATION_ID, Harness
 
 WORKSPACE = {"id": "ws", "name": "Shop"}
 
@@ -30,7 +30,8 @@ def test_the_signature_covers_exactly_the_bytes_sent(sdk: Harness, api: respx.Mo
     request = route.calls.last.request
     assert request.content == '{"external_id":"Jürgen/1","n":1}'.encode()
     expected = sign(
-        SECRET_KEY, canonical_request("POST", "/v1/verifications", request.content.decode())
+        SECRET_KEY,
+        f"{NOW}." + canonical_request("POST", "/v1/verifications", request.content.decode()),
     )
     assert request.headers["X-HMAC-Signature"] == expected
     assert request.headers["X-API-Key"] == API_KEY
@@ -44,7 +45,7 @@ def test_a_bodyless_request_sends_no_content_type(sdk: Harness, api: respx.MockR
     request = route.calls.last.request
     assert request.content == b""
     assert "Content-Type" not in request.headers
-    assert request.headers["X-HMAC-Signature"] == sign(SECRET_KEY, "GET/v1/workspace")
+    assert request.headers["X-HMAC-Signature"] == sign(SECRET_KEY, f"{NOW}.GET/v1/workspace")
 
 
 def test_a_query_is_sent_as_the_exact_string_signed(sdk: Harness, api: respx.MockRouter) -> None:
@@ -56,6 +57,7 @@ def test_a_query_is_sent_as_the_exact_string_signed(sdk: Harness, api: respx.Moc
     assert request.url.query == wire.encode()
     canonical = f"GET/v1/verifications?{wire}"
     assert canonical_request("GET", "/v1/verifications", "", wire) == canonical
+    canonical = f"{NOW}.{canonical}"
     expected = hmac.new(SECRET_KEY.encode(), canonical.encode(), hashlib.sha256).hexdigest()
     assert request.headers["X-HMAC-Signature"] == expected
 
@@ -73,8 +75,10 @@ def test_a_delete_is_retried_on_429(sdk: Harness, api: respx.MockRouter) -> None
     )
     assert sdk.call(lambda c: c._delete("webhook-subscriptions/s1"), retry_delay=0) is None
     assert route.call_count == 2
-    assert route.calls.last.request.headers["X-HMAC-Signature"] == sign(
-        SECRET_KEY, "DELETE/v1/webhook-subscriptions/s1"
+    headers = route.calls.last.request.headers
+    assert int(headers["X-Timestamp"]) > NOW
+    assert headers["X-HMAC-Signature"] == sign(
+        SECRET_KEY, f"{headers['X-Timestamp']}.DELETE/v1/webhook-subscriptions/s1"
     )
 
 
@@ -111,7 +115,7 @@ def test_multipart_sends_the_strings_it_signed(sdk: Harness, api: respx.MockRout
     canonical = canonical_multipart_request(
         "POST", f"/v1/verifications/{VERIFICATION_ID}/media", wire, [b"jpeg-bytes"]
     )
-    assert request.headers["X-HMAC-Signature"] == sign(SECRET_KEY, canonical)
+    assert request.headers["X-HMAC-Signature"] == sign(SECRET_KEY, f"{NOW}.{canonical}")
 
 
 def test_every_request_identifies_the_sdk(sdk: Harness, api: respx.MockRouter) -> None:

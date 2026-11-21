@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import email.utils
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -8,9 +10,10 @@ import pytest
 import respx
 
 from proofage import AsyncProofAge, ProofAge
-from proofage.errors import NotFoundError, RateLimitError, TransportError
+from proofage._signing import sign
+from proofage.errors import AuthenticationError, NotFoundError, RateLimitError, TransportError
 
-from .conftest import API_KEY, SECRET_KEY, VERIFICATION_ID
+from .conftest import API_KEY, NOW, SECRET_KEY, VERIFICATION_ID
 
 VID = VERIFICATION_ID
 KW = {"api_key": API_KEY, "secret_key": SECRET_KEY, "base_url": "https://api.test"}
@@ -110,3 +113,58 @@ def test_a_malformed_media_id_is_refused(api: respx.MockRouter) -> None:
     ):
         pass
     assert not api.calls
+
+
+def _http_date(unix: float) -> str:
+    return email.utils.format_datetime(datetime.fromtimestamp(unix, timezone.utc), usegmt=True)
+
+
+OUT_OF_RANGE = {"error": {"code": "TIMESTAMP_OUT_OF_RANGE", "message": "Clock is off."}}
+
+
+def _skewed_client_calls(api: respx.MockRouter, kind: str, responses: list[httpx.Response]):  # type: ignore[no-untyped-def]
+    route = api.get(MEDIA).mock(side_effect=responses)
+
+    def read_twice_sync() -> None:
+        with ProofAge(**KW) as client:
+            client._clock = lambda: float(NOW)
+            for _ in range(2):
+                with client.verifications.download_media(VID, "m-1") as chunks:
+                    b"".join(chunks)
+
+    async def read_twice_async() -> None:
+        async with AsyncProofAge(**KW) as client:
+            client._clock = lambda: float(NOW)
+            for _ in range(2):
+                async with client.verifications.download_media(VID, "m-1") as chunks:
+                    b"".join([chunk async for chunk in chunks])
+
+    if kind == "sync":
+        read_twice_sync()
+    else:
+        asyncio.run(read_twice_async())
+    return route
+
+
+@pytest.mark.parametrize("kind", ["sync", "async"])
+def test_download_learns_clock_skew_resends_once_and_reuses_the_offset(
+    api: respx.MockRouter, kind: str
+) -> None:
+    skewed = httpx.Response(401, headers={"Date": _http_date(NOW + 400)}, json=OUT_OF_RANGE)
+    route = _skewed_client_calls(
+        api, kind, [skewed, httpx.Response(200, content=b"a"), httpx.Response(200, content=b"b")]
+    )
+    first, second, third = (call.request for call in route.calls)
+    assert first.headers["X-Timestamp"] == str(NOW)
+    assert second.headers["X-Timestamp"] == str(NOW + 400)
+    assert third.headers["X-Timestamp"] == str(NOW + 400)
+    assert second.headers["X-HMAC-Signature"] == sign(SECRET_KEY, f"{NOW + 400}.GET/v1{MEDIA}")
+
+
+@pytest.mark.parametrize("kind", ["sync", "async"])
+def test_download_raises_when_the_skew_resend_fails_too(api: respx.MockRouter, kind: str) -> None:
+    skewed = httpx.Response(401, headers={"Date": _http_date(NOW + 400)}, json=OUT_OF_RANGE)
+    with pytest.raises(AuthenticationError) as raised:
+        _skewed_client_calls(api, kind, [skewed, skewed])
+    assert raised.value.code == "TIMESTAMP_OUT_OF_RANGE"
+    assert len(api.calls) == 2

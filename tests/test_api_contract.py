@@ -334,3 +334,17 @@ def test_the_refusals_of_a_face_reverification_are_documented_on_create() -> Non
     for code in ("REFERENCE_NOT_APPROVED", "REFERENCE_NOT_SUPPORTED", "REFERENCE_UNAVAILABLE"):
         assert code in json.dumps(responses["422"])
     assert "REAUTH_RATE_LIMITED" in json.dumps(responses["429"])
+
+
+def test_idempotency_key_is_a_header_of_exactly_the_create_operations() -> None:
+    keyed = set()
+    for path, methods in SPEC["paths"].items():
+        for verb, operation in methods.items():
+            parameters = operation.get("parameters", [])
+            headers = [p["name"] for p in parameters if p.get("in") == "header"]
+            if "Idempotency-Key" in headers:
+                keyed.add((verb.upper(), path))
+    assert keyed == {("POST", "/verifications"), ("POST", "/webhook-subscriptions")}
+    for name in ("verifications.create", "webhook_subscriptions.create"):
+        assert "idempotency_key" in inspect.signature(method(name, SYNC)).parameters
+        assert "idempotency_key" in inspect.signature(method(name, ASYNC)).parameters

@@ -15,6 +15,8 @@ SECRET_KEY = "sk_test_do_not_leak_0123456789"
 BASE_URL = "https://api.test"
 API = f"{BASE_URL}/v1"
 VERIFICATION_ID = "0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a6b"
+NOW = 1795049078
+"""The Unix time every harness client reads unless a test sets `clock`: the golden vectors' time."""
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +36,16 @@ class Harness:
 
     kind: str
     sleeps: list[float] = field(default_factory=list)
+    clock: Callable[[], float] | None = None
+    """Overrides the default clock, which is `NOW` plus the seconds slept so far."""
+    elapsed: float = 0.0
+
+    def now(self) -> float:
+        return NOW + self.elapsed
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.elapsed += seconds
 
     def call(self, fn: Callable[[Any], Any], **client_kwargs: Any) -> Any:
         kwargs: dict[str, Any] = {
@@ -44,16 +56,18 @@ class Harness:
         }
         if self.kind == "sync":
             with ProofAge(**kwargs) as client:
-                client._sleep = self.sleeps.append
+                client._sleep = self.sleep
+                client._clock = self.clock or self.now
                 return fn(client)
 
         async def main() -> Any:
             async with AsyncProofAge(**kwargs) as client:
 
                 async def record(seconds: float) -> None:
-                    self.sleeps.append(seconds)
+                    self.sleep(seconds)
 
                 client._sleep = record
+                client._clock = self.clock or self.now
                 return await fn(client)
 
         return asyncio.run(main())

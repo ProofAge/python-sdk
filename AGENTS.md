@@ -67,7 +67,14 @@ A 2xx with an empty body returns `None` from the methods typed `-> None`; where 
 promised, an empty or non-JSON 2xx raises `ProofAgeError` (a non-JSON one almost always means
 `base_url` points at a website rather than the API).
 
-Retries: GETs retry on 408, 429, 5xx, timeouts and transport errors. POSTs and DELETEs retry
+Retries: GETs, and the two create calls (`verifications.create`, `webhook_subscriptions.create`,
+which carry an `Idempotency-Key`), retry on 408, 429, 5xx, timeouts and transport errors; a create
+also retries `409 IDEMPOTENCY_KEY_IN_PROGRESS`, waiting for `Retry-After` (up to 60 s). Every retry
+uses the same key and a new `X-Timestamp` and signature. A non-GET request answered `401 REPLAYED_REQUEST` (a byte-identical request was signed in the same
+second, so the signature repeated; the server refuses it before anything runs) is resent **once**
+after waiting for the next whole second, with a new `X-Timestamp` and signature and the same
+`Idempotency-Key`; this applies to every POST and DELETE, whatever the rules below, and does not
+count against `retry_attempts`. A second `REPLAYED_REQUEST` raises `AuthenticationError`. Before any re-attempt of a non-GET (a normal retry, this resend, the skew resend) the client waits until its clock is in a later whole second than the previous attempt's `X-Timestamp`, so a 5xx or 429 retried within the same second is not refused as a replay. On `401 TIMESTAMP_OUT_OF_RANGE` (any method) with a parseable `Date` header, the client sets an offset (server `Date` minus local clock) that it applies to every later timestamp, and resends that request once, with the same `Idempotency-Key`, outside `retry_attempts`; with no `Date`, or on a second one, `AuthenticationError` is raised as before. Other POSTs and DELETEs retry
 **only** on 429 and on errors raised before anything was sent (`httpx.ConnectError`,
 `httpx.ConnectTimeout`) — never on 5xx or after sending began (`WriteError`, `WriteTimeout`,
 `ReadError`, `ReadTimeout`, `RemoteProtocolError`), where the server may already have created the
@@ -79,6 +86,19 @@ GET /v1/..."), naming the fields but never their values.
 ## Auth / HMAC
 
 - `X-API-Key`: workspace API key (plaintext; the server SHA256-hashes it).
+- `X-Timestamp`: current Unix time in seconds, sent on every request. The signature then covers
+  `{X-Timestamp}.{canonical string}` (the strings below, with that prefix). The server accepts a
+  timestamp within 300 seconds and a signed request other than GET once, so the client computes the
+  timestamp and the signature again on every attempt, retries included. Errors (all 401, `AuthenticationError`):
+  `TIMESTAMP_OUT_OF_RANGE` (the clock is off by more than 5 minutes), `TIMESTAMP_REQUIRED` (the workspace
+  requires the header), `REPLAYED_REQUEST` (the same signature was sent twice; this SDK never does).
+- `Idempotency-Key`: sent only by the two create calls, a UUID v4 per call kept across retries, or
+  your `idempotency_key=` (1 to 255 printable ASCII characters; anything else raises
+  `ConfigurationError` before sending). Within 24 hours the same key and request return the first
+  response (the header `Idempotent-Replayed: true`; only responses below 500 are stored). Errors:
+  `400 IDEMPOTENCY_KEY_INVALID`, `409 IDEMPOTENCY_KEY_REUSED` (the same key with a different request;
+  `ProofAgeError`, `status_code == 409`), `409 IDEMPOTENCY_KEY_IN_PROGRESS` (the first call is still
+  running, `Retry-After: 1`; the SDK waits and retries it).
 - `X-HMAC-Signature`: hex HMAC-SHA256 with the workspace secret key over a canonical string:
   - JSON / no-file requests: `METHOD + /{version}/{path} + ?query + rawJsonBody` (direct
     concatenation, no delimiter; the query part only when there is one, keys sorted and keys and
@@ -105,10 +125,10 @@ Response: `{ id: str, name: str, flow_type: str, mode: str, age_mode: str|None, 
 Request: none.
 Response: `{ id: int, version: int, text_sha256: str, url: str }` (`version` is informational: accept consent with `id` and `text_sha256`)
 
-### POST /verifications — `client.verifications.create(**kwargs)` → `CreatedVerification`
+### POST /verifications — `client.verifications.create(*, ..., idempotency_key=None)` → `CreatedVerification`
 Request (all optional keywords): `callback_url: url(<=2048), external_id: str(<=255), external_metadata: dict, metadata: dict, reference_verification_id: str(uuid)`. `reference_verification_id` makes the session a **face re-verification** (see below).
 Response (`201`): `{ id, external_id, external_metadata, redirect_url, status, reason, duplicate_check: DuplicateCheck, erasure: Erasure|None, consent_accepted_at, created_at, updated_at, reauth: Reauth|None, url }` — `url` is the hosted session the person opens. `reauth` is set on a face re-verification only and is `None` on every other verification.
-Errors: `402` `PaymentRequiredError`; `422` `ValidationError`; and, only when `reference_verification_id` is sent, the refusals under *Face re-verification*.
+Errors: `402` `PaymentRequiredError`; `422` `ValidationError`; `400` `IDEMPOTENCY_KEY_INVALID` and `409` `IDEMPOTENCY_KEY_REUSED` (see *Auth / HMAC*); and, only when `reference_verification_id` is sent, the refusals under *Face re-verification*.
 
 ### Face re-verification — `client.verifications.create(reference_verification_id=...)`
 Confirms that the person is the one who passed an earlier ID verification. Create the session with `reference_verification_id`: the `id` of an **approved, document-based verification of the same workspace** (a KYC, or an age verification done with a document; not an age estimation by selfie, not another re-verification). The person opens `url` and takes a selfie with the workspace's liveness check; no document is asked for. The selfie is compared 1:1 with the face of the reference verification and decided automatically: `approved` when it is the same person (ProofAge applies its own threshold, which is not exposed), `declined` with reason `reference.face.mismatch` when it is not, `declined` with `reference.unavailable` when the reference was erased or reversed in the meantime. There is no manual review of a re-verification. Liveness and anti-spoof reasons are the usual `selfie.*` ones.
@@ -162,7 +182,7 @@ Response: `{ document: { type: DocumentResultType|str|None, issuing_country: str
 Document semantics. `None` means the field was not read or is not printed on that document (a passport has no address, many cards print no place of birth, the German identity card prints no sex). `type` is an open enum (`passport`, `id`, `driver_license`, `residence_permit`, `other`; an unknown value arrives as a plain string): `other` is a readable document that is not an identity card, passport, driving licence or residence permit, such as a health insurance card, and `id` is the same value the upload endpoint takes. `issuing_subdivision` is the state or province of issuance as a bare code (`FL` with `US`; up to three uppercase letters or digits) or `None`: `None` when `issuing_country` is, filled today for US driving licences and ID cards, present on every workspace, and kept after erasure. `issuing_country` and `nationality` are ISO 3166-1 alpha-2 (`XK` for Kosovo) and can differ, for example on a residence permit. `gender` is `F`, `M` or `X` (`DocumentGender`, open); `X` means the document states that the sex is unspecified, and `gender` is `None` on a Mexican voter card or driving licence created before 20 August 2026 17:00 UTC. `date_of_birth`, `issue_date` and `expiry_date` are dates: a document that prints only the month or year of expiry reports the last day of that period, a partially printed birth or issue date is `None`, and a permanent document (for example `PERMANENTE`) has a `None` `expiry_date`. `place_of_birth` is the printed text. `address` is the printed text as read (trimmed, `None` when empty, not parsed, may contain line breaks). Age workspaces receive only `type`, `issuing_country` and `first_name`, `last_name`, `date_of_birth`, `document_number`; on them the other seven keys are absent and read as `None`.
 
 ### GET /verifications/{verification}/media/{media} — `download_media()` / `download_media_to()`
-`with client.verifications.download_media(verification_id, media_id) as chunks:` yields the image bytes as an iterator (`async with` and an async iterator on `AsyncProofAge`); `client.verifications.download_media_to(verification_id, media_id, path)` streams to disk and returns the `Path`, writing to a temporary sibling and renaming only after a 2xx, so a failure never leaves a partial file. `media_id` is `media[].id` from `document()`; check its `url` is not None first. Requests send `Accept: application/json, */*;q=0.8` so errors come back as JSON. Error: `404` `NotFoundError` with `code == "MEDIA_NOT_FOUND"`. An HTTP status is never retried, 429 included; a transport failure is retried `download_retry_attempts` times, only before the first byte.
+`with client.verifications.download_media(verification_id, media_id) as chunks:` yields the image bytes as an iterator (`async with` and an async iterator on `AsyncProofAge`); `client.verifications.download_media_to(verification_id, media_id, path)` streams to disk and returns the `Path`, writing to a temporary sibling and renaming only after a 2xx, so a failure never leaves a partial file. `media_id` is `media[].id` from `document()`; check its `url` is not None first. Requests send `Accept: application/json, */*;q=0.8` so errors come back as JSON. Error: `404` `NotFoundError` with `code == "MEDIA_NOT_FOUND"`. An HTTP status is never retried, 429 included, except `401 TIMESTAMP_OUT_OF_RANGE` with a `Date` header, which learns the clock offset and is resent once; a transport failure is retried `download_retry_attempts` times, only before the first byte.
 
 ### GET /verifications/{verification}/estimation — `client.verifications.estimation(verification_id)` → `AgeEstimation`
 Request: none.
@@ -184,11 +204,11 @@ Request: `status: VerificationOutcome | str` (`approved`, `declined`, `review`, 
 Response: the `Verification`, as `get()` returns it, with its new `status`.
 Errors: `403` `PermissionDeniedError` with `code == "TEST_WORKSPACE_ONLY"` in a live workspace (or `{ message }` for a verification of another workspace); `422` `ValidationError` with `code == "INVALID_STATUS"` when the verification is already final, or `.errors` for an invalid field. Not retried on 5xx.
 
-### POST /webhook-subscriptions — `client.webhook_subscriptions.create(*, url, statuses=None, include_document_data=None)` → `WebhookSubscription`
+### POST /webhook-subscriptions — `client.webhook_subscriptions.create(*, url, statuses=None, include_document_data=None, idempotency_key=None)` → `WebhookSubscription`
 Subscribes a URL to the decision webhooks, in addition to the workspace webhook URL set in the console. Built for REST hooks such as Zapier: subscribe when an automation is turned on, delete the subscription when it is turned off. Up to 50 per workspace.
 Request: `url: str` (http or https, <=2048, a public address: private, local and cloud-metadata addresses are refused), `statuses: list[VerificationStatus | str] | None` (any of `approved`, `declined`, `resubmission_requested`, `review`, `abandoned`, `expired`; `None` or omitted for all of them; a bare string raises `TypeError`), `include_document_data: bool` (API default `False`).
 Response (`201`): `{ id: str, url: str, statuses: list[VerificationStatus | str]|None, include_document_data: bool, created_at: datetime }` — `statuses` is `None` when every decision status is delivered.
-Errors: `422` `ValidationError` with `code == "WEBHOOK_SUBSCRIPTION_LIMIT"` at 50 subscriptions, or `.errors` for an invalid field. Not retried on 5xx.
+Errors: `422` `ValidationError` with `code == "WEBHOOK_SUBSCRIPTION_LIMIT"` at 50 subscriptions, or `.errors` for an invalid field. Takes `idempotency_key` like `verifications.create()`; retried on 5xx with the same key.
 
 Deliveries have the workspace webhook's body and headers (see "Outbound webhook"), only `event == "status.updated"` (never `data.updated`) and only for the subscribed statuses. They are signed with the secret key that signed the create request while that key exists, then with the active secret key. Unless `include_document_data=True`, the body leaves out `document`, `fingerprint_signals` and `manual_moderation.performed_by` (all `None` on the parsed `WebhookEvent`). A delivery answered `410 Gone` deletes the subscription.
 

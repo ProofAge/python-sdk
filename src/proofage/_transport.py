@@ -10,6 +10,8 @@ import email.utils
 import json
 import math
 import mimetypes
+import re
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timezone
@@ -26,10 +28,12 @@ from ._signing import (
     canonical_request,
     serialize_json_body,
     sign,
+    timestamped_canonical,
     to_multipart_fields,
 )
 from .errors import (
     AuthenticationError,
+    ConfigurationError,
     NotFoundError,
     PaymentRequiredError,
     PermissionDeniedError,
@@ -146,16 +150,57 @@ _IDEMPOTENT = frozenset({"GET", "HEAD"})
 _NEVER_SENT = (httpx.ConnectError, httpx.ConnectTimeout)
 
 
+IDEMPOTENCY_HEADER = "Idempotency-Key"
+TIMESTAMP_HEADER = "X-Timestamp"
+IN_PROGRESS_CODE = "IDEMPOTENCY_KEY_IN_PROGRESS"
+
+_IDEMPOTENCY_KEY = re.compile(r"[\x21-\x7E]{1,255}")
+
+
+def new_idempotency_key() -> str:
+    """A fresh UUID v4, one per logical create call."""
+    return str(uuid.uuid4())
+
+
+def resolve_idempotency_key(supplied: str | None) -> str:
+    """The caller's key, checked against the server's rule (1-255 printable ASCII), or a new one."""
+    if supplied is None:
+        return new_idempotency_key()
+    if not isinstance(supplied, str) or not _IDEMPOTENCY_KEY.fullmatch(supplied):
+        raise ConfigurationError(
+            "Invalid idempotency_key: expected 1 to 255 printable ASCII characters "
+            "(no spaces), e.g. a UUID"
+        )
+    return supplied
+
+
 @dataclass(frozen=True)
 class PreparedRequest:
-    """A signed request, ready for either client to send."""
+    """A request ready for either client to send, apart from its timestamp and signature.
+
+    `canonical` is the legacy canonical string; `signed_headers()` adds `X-Timestamp` and the
+    signature over `{timestamp}.{canonical}`. Call it once per attempt: the server accepts a
+    signed request other than GET once, so a retry must carry a new timestamp and signature.
+    """
 
     method: str
     url: str
     headers: dict[str, str]
+    canonical: str
     content: bytes | None = None
     data: dict[str, str] | None = None
     files: list[tuple[str, tuple[str, bytes, str]]] | None = None
+    idempotency_key: str | None = None
+
+    def signed_headers(self, secret_key: str, now: float) -> dict[str, str]:
+        """The headers of one attempt, stamped with `now` (Unix seconds)."""
+        timestamp = str(int(now))
+        headers = dict(self.headers)
+        headers[TIMESTAMP_HEADER] = timestamp
+        headers["X-HMAC-Signature"] = sign(
+            secret_key, timestamped_canonical(timestamp, self.canonical)
+        )
+        return headers
 
 
 def api_path(config: ClientConfig, endpoint: str) -> str:
@@ -178,6 +223,7 @@ def prepare_json(
     *,
     query: Mapping[str, Any] | None = None,
     accept: str = "application/json",
+    idempotency_key: str | None = None,
 ) -> PreparedRequest:
     """Serialise once, sign those bytes, send those bytes.
 
@@ -188,15 +234,21 @@ def prepare_json(
     query_string = build_query(query or {})
     body = serialize_json_body(payload or {})
     headers = _base_headers(config, accept)
-    headers["X-HMAC-Signature"] = sign(
-        config.secret_key, canonical_request(method, path, body, query_string)
-    )
+    if idempotency_key is not None:
+        headers[IDEMPOTENCY_HEADER] = idempotency_key
     content: bytes | None = None
     if body:
         headers["Content-Type"] = "application/json"
         content = body.encode("utf-8")
     url = config.base_url + path + (f"?{query_string}" if query_string else "")
-    return PreparedRequest(method.upper(), url, headers, content=content)
+    return PreparedRequest(
+        method.upper(),
+        url,
+        headers,
+        canonical_request(method, path, body, query_string),
+        content=content,
+        idempotency_key=idempotency_key,
+    )
 
 
 def prepare_multipart(
@@ -212,30 +264,77 @@ def prepare_multipart(
     path = api_path(config, endpoint)
     wire = to_multipart_fields(fields)
     headers = _base_headers(config, "application/json")
-    headers["X-HMAC-Signature"] = sign(
-        config.secret_key, canonical_multipart_request(method, path, wire, [content])
-    )
     mime = mimetypes.guess_type(filename)[0] or "application/octet-stream"
     return PreparedRequest(
         method.upper(),
         config.base_url + path,
         headers,
+        canonical_multipart_request(method, path, wire, [content]),
         data=wire,
         files=[("file", (filename, content, mime))],
     )
 
 
-def is_retryable_status(method: str, status: int) -> bool:
-    """GET: 408, 429, 5xx. POST and DELETE: only 429, which the rate limiter answers before
-    anything runs."""
-    if method.upper() in _IDEMPOTENT:
+def is_retryable_status(method: str, status: int, *, keyed: bool = False, text: str = "") -> bool:
+    """GET, or a POST carrying an `Idempotency-Key` (`keyed`): 408, 429, 5xx, and for the keyed
+    POST also 409 `IDEMPOTENCY_KEY_IN_PROGRESS`. Other POSTs and DELETEs: only 429, which the
+    rate limiter answers before anything runs."""
+    if method.upper() in _IDEMPOTENT or keyed:
+        if status == 409:
+            return keyed and parse_error_body(text)[1] == IN_PROGRESS_CODE
         return status in (408, 429) or 500 <= status < 600
     return status == 429
 
 
-def is_retryable_exception(method: str, exc: httpx.TransportError) -> bool:
-    """GET: any transport failure. POST and DELETE: only failures before a byte was sent."""
-    if method.upper() in _IDEMPOTENT:
+REPLAYED_CODE = "REPLAYED_REQUEST"
+
+
+def is_replayed_request(method: str, status: int, text: str) -> bool:
+    """A non-GET 401 `REPLAYED_REQUEST`: a byte-identical request was signed in the same second.
+    The server refused it in middleware, so nothing ran and one re-signed resend is safe."""
+    return (
+        method.upper() not in _IDEMPOTENT
+        and status == 401
+        and parse_error_body(text)[1] == REPLAYED_CODE
+    )
+
+
+TIMESTAMP_RANGE_CODE = "TIMESTAMP_OUT_OF_RANGE"
+
+
+def is_timestamp_out_of_range(status: int, text: str) -> bool:
+    """A 401 `TIMESTAMP_OUT_OF_RANGE`, for any method: the clock is off by over 5 minutes."""
+    return status == 401 and parse_error_body(text)[1] == TIMESTAMP_RANGE_CODE
+
+
+def parse_http_date(value: str | None) -> float | None:
+    """A response `Date` header as Unix seconds, or None when absent or unparseable."""
+    if not value:
+        return None
+    try:
+        when = email.utils.parsedate_to_datetime(value.strip())
+    except (TypeError, ValueError, IndexError):
+        return None
+    if when is None:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.timestamp()
+
+
+NEW_SECOND_MARGIN = 0.05
+NEW_SECOND_MAX_WAITS = 10
+
+
+def is_signed_once(method: str) -> bool:
+    """The server accepts a timestamped request other than GET/HEAD once: it needs a new second."""
+    return method.upper() not in _IDEMPOTENT
+
+
+def is_retryable_exception(method: str, exc: httpx.TransportError, *, keyed: bool = False) -> bool:
+    """GET and keyed POST: any transport failure. Other POSTs and DELETEs: only failures before
+    a byte was sent."""
+    if method.upper() in _IDEMPOTENT or keyed:
         return True
     return isinstance(exc, _NEVER_SENT)
 
@@ -263,8 +362,8 @@ def parse_retry_after(value: str | None, now: float) -> float | None:
 def retry_delay(
     config: ClientConfig, attempt: int, status: int | None, retry_after: float | None
 ) -> float:
-    """A 429's `Retry-After` when sent, otherwise `retry_delay * attempt number`."""
-    if status == 429 and retry_after is not None:
+    """A 429's or 409's `Retry-After` when sent, otherwise `retry_delay * attempt number`."""
+    if status in (409, 429) and retry_after is not None:
         return retry_after
     return config.retry_delay * (attempt + 1)
 
@@ -280,13 +379,14 @@ NOT_WORTH_RETRYING_429 = frozenset({"REAUTH_RATE_LIMITED"})
 
 
 def within_retry_after_cap(status: int, retry_after: float | None, text: str = "") -> bool:
-    """False when a 429 should be raised at once: its `Retry-After` is longer than the SDK
-    will block a caller for, or its code (`REAUTH_RATE_LIMITED`) says a retry cannot help."""
-    if status != 429:
+    """False when a 429 (or a 409 in progress) should be raised at once: its `Retry-After` is
+    longer than the SDK will block a caller for, or its code (`REAUTH_RATE_LIMITED`) says a
+    retry cannot help."""
+    if status not in (409, 429):
         return True
     if retry_after is not None and retry_after > MAX_RETRY_AFTER:
         return False
-    return parse_error_body(text)[1] not in NOT_WORTH_RETRYING_429
+    return status != 429 or parse_error_body(text)[1] not in NOT_WORTH_RETRYING_429
 
 
 def describe_validation_error(exc: PydanticValidationError) -> str:

@@ -15,6 +15,7 @@ from proofage._signing import (
     rawurlencode,
     serialize_json_body,
     sign,
+    timestamped_canonical,
     to_multipart_fields,
     webhook_signature,
 )
@@ -104,3 +105,24 @@ def test_multipart_fields_are_the_strings_that_go_on_the_wire() -> None:
         "device_info": '{"os":"iOS","ua":"Mozilla/5.0 (é)"}',
         "telemetry": "[1,2]",
     }
+
+
+def test_there_are_twelve_timestamped_vectors() -> None:
+    assert len(VECTORS["timestamped"]) == 12
+    assert {v["form"] for v in VECTORS["timestamped"]} == {"json", "multipart"}
+
+
+@pytest.mark.parametrize("vector", VECTORS["timestamped"], ids=lambda v: v["name"])
+def test_timestamped_vectors(vector: dict[str, Any]) -> None:
+    if vector["form"] == "multipart":
+        files = [base64.b64decode(f["content_base64"]) for f in vector["files"]]
+        legacy = canonical_multipart_request(
+            vector["method"], vector["path"], vector["fields"], files
+        )
+    else:
+        legacy = canonical_request(
+            vector["method"], vector["path"], vector["body"], vector.get("query", "")
+        )
+    canonical = timestamped_canonical(vector["timestamp"], legacy)
+    assert canonical == vector["canonical"]
+    assert sign(SECRET, canonical) == vector["expected"]

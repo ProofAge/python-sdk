@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 
 import httpx
 
+from .._transport import resolve_idempotency_key
 from ..errors import TransportError
 from ..models import (
     AcceptConsentResult,
@@ -64,8 +65,14 @@ class Verifications:
         reference_verification_id: str | None = None,
         fingerprint: str | None = None,
         page_url: str | None = None,
+        idempotency_key: str | None = None,
     ) -> CreatedVerification:
         """`POST /verifications`. Send the person to the returned `url`.
+
+        The call carries an `Idempotency-Key` (yours in `idempotency_key`, else a new UUID v4),
+        the same on every retry, so a retried create never makes a second session. Within 24
+        hours the same key and request return the first response; the same key with a different
+        request raises `ProofAgeError` `IDEMPOTENCY_KEY_REUSED` (409).
 
         `reference_verification_id` makes the session a face re-verification: the id of an
         approved, document-based verification of the same workspace. The person takes a selfie
@@ -89,7 +96,12 @@ class Verifications:
                 "page_url": page_url,
             }
         )
-        return self._client._post_model("verifications", payload, CreatedVerification)
+        return self._client._post_model(
+            "verifications",
+            payload,
+            CreatedVerification,
+            idempotency_key=resolve_idempotency_key(idempotency_key),
+        )
 
     def get(self, verification_id: str) -> Verification:
         """`GET /verifications/{id}`."""
@@ -330,8 +342,14 @@ class AsyncVerifications:
         reference_verification_id: str | None = None,
         fingerprint: str | None = None,
         page_url: str | None = None,
+        idempotency_key: str | None = None,
     ) -> CreatedVerification:
         """`POST /verifications`. Send the person to the returned `url`.
+
+        The call carries an `Idempotency-Key` (yours in `idempotency_key`, else a new UUID v4),
+        the same on every retry, so a retried create never makes a second session. Within 24
+        hours the same key and request return the first response; the same key with a different
+        request raises `ProofAgeError` `IDEMPOTENCY_KEY_REUSED` (409).
 
         `reference_verification_id` makes the session a face re-verification: the id of an
         approved, document-based verification of the same workspace. The person takes a selfie
@@ -355,7 +373,12 @@ class AsyncVerifications:
                 "page_url": page_url,
             }
         )
-        return await self._client._post_model("verifications", payload, CreatedVerification)
+        return await self._client._post_model(
+            "verifications",
+            payload,
+            CreatedVerification,
+            idempotency_key=resolve_idempotency_key(idempotency_key),
+        )
 
     async def get(self, verification_id: str) -> Verification:
         """`GET /verifications/{id}`."""

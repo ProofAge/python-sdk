@@ -4,6 +4,36 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
+## 0.14.0 — 2026-11-21
+
+- **Added:** every signed request now carries `X-Timestamp` (Unix seconds) and the signature covers
+  `{timestamp}.{canonical request}`. The timestamp and the signature are computed again on every
+  attempt, so a retry is never rejected as a replay (`REPLAYED_REQUEST`). Workspaces that require a
+  timestamp (`TIMESTAMP_REQUIRED`) now work; `TIMESTAMP_OUT_OF_RANGE` means the machine's clock is
+  more than 5 minutes off.
+- **Added:** a POST or DELETE answered `401 REPLAYED_REQUEST` (two byte-identical requests signed in
+  the same second share a signature) is resent once after the next whole second, re-signed with a
+  new `X-Timestamp` and with the same `Idempotency-Key`. It is not counted in `retry_attempts` and
+  applies even where the normal rules do not retry; a second `REPLAYED_REQUEST` raises
+  `AuthenticationError`. GET is unaffected.
+- **Added:** clock-skew recovery. On `401 TIMESTAMP_OUT_OF_RANGE` with a parseable `Date` header the
+  client keeps an offset (server `Date` minus local clock) for all later timestamps and resends the
+  request once, with the same `Idempotency-Key`, outside `retry_attempts`. Without `Date`, or on a
+  second one, `AuthenticationError` is raised. Media downloads get the same one-shot correction.
+- **Changed:** before any re-attempt of a POST or DELETE (a retry, the replay resend or the skew
+  resend) the client waits until the clock is in a later whole second than the previous attempt's
+  `X-Timestamp`, so a retried 5xx or 429 is not refused as `REPLAYED_REQUEST`.
+- **Added:** `Idempotency-Key` on `verifications.create()` and `webhook_subscriptions.create()`,
+  sync and async. The SDK sends a new UUID v4 per call and keeps it across its own retries; pass
+  `idempotency_key=` to use your own (1 to 255 printable ASCII characters, else `ConfigurationError`).
+  Within 24 hours the same key and request return the first response; the same key with a different
+  request raises `ProofAgeError` `IDEMPOTENCY_KEY_REUSED` (409).
+- **Changed:** a create call, because it carries a key, is now retried like a GET (408, 429, 5xx and
+  any transport failure) and waits out `409 IDEMPOTENCY_KEY_IN_PROGRESS` using `Retry-After`. Every
+  other POST and DELETE keeps its retry rules, and the attempt counts and delays are unchanged.
+- **Changed:** the bundled `openapi.json` is synced with the docs; `tests/fixtures/hmac-vectors.json`
+  gains the `timestamped` vectors.
+
 ## 0.13.0 — 2026-11-18
 
 - **Added:** `WorkspaceInfo.webhook_include_document_data` (defaults to `True` when the server does
