@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The project follows
 [Semantic Versioning](https://semver.org/); while the version is 0.x, a minor
 release may change the API and a patch release never does.
 
-## 0.14.0 — 2026-11-19
+## 0.14.0 — 2026-11-21
 
 - **Added:** every signed request now carries `X-Timestamp` (Unix seconds) and the signature covers
   `{timestamp}.{canonical request}`. The timestamp and the signature are computed again on every
